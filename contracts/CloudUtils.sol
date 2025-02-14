@@ -7,7 +7,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 contract CloudUtils is Initializable, OwnableUpgradeable {
     IERC20 public cloudToken;
-    address[] public excludedFromCirculatingSupply; // Stores excluded addresses
+    address[] private excludedFromCirculatingSupply; // Stores excluded addresses
 
     event ExclusionUpdated(address wallet, bool isExcluded);
 
@@ -59,6 +59,10 @@ contract CloudUtils is Initializable, OwnableUpgradeable {
         require(excludedBalance <= totalSupply, "Inconsistent state: excluded balance exceeds total supply");
 
         return totalSupply - excludedBalance;
+    }
+    
+    function getExcludedAddresses() external view returns (address[] memory) {
+        return excludedFromCirculatingSupply;
     }
 
     /// @dev Storage gap for upgrade safety, prevents storage conflicts in future versions
