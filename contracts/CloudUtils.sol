@@ -18,7 +18,7 @@ contract CloudUtils is Initializable, OwnableUpgradeable {
 
     function initialize(address _cloudToken) public initializer {
         require(_cloudToken != address(0), "Invalid token address");
-        __Ownable_init();
+        __Ownable_init(msg.sender);
         cloudToken = IERC20(_cloudToken);
     }
 

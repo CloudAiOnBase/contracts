@@ -26,8 +26,9 @@ async function main() {
         initializer: "initialize",
     });
 
-    await cloudUtils.deployed();
-    console.log(`✅ CloudUtils deployed to: ${cloudUtils.address} on ${network.toUpperCase()}`);
+    await cloudUtils.waitForDeployment(); 
+
+   console.log(`✅ CloudUtils deployed to: ${await cloudUtils.getAddress()} on ${network.toUpperCase()}`);
 }
 
 main()

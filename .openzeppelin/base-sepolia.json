@@ -1,0 +1,150 @@
+{
+  "manifestVersion": "3.2",
+  "proxies": [
+    {
+      "address": "0xFba12Fa118b8755f5Fbfb5A544a0fA522aF9D7D6",
+      "txHash": "0x4b3125727e6ab876b53ebc1e96222c862112fca71612165cb1a5d8415cffb053",
+      "kind": "transparent"
+    },
+    {
+      "address": "0x2425598dD959E47a294A737eE4104316864817cf",
+      "txHash": "0x72a14a350445c1969bda1187cc1f678e305bf9522b4e12e236a93518d6dc5d82",
+      "kind": "transparent"
+    },
+    {
+      "address": "0xeC3696804b022BC7bf028699cDF86C588743dD5a",
+      "txHash": "0xbe21cdd8fbf675f610f7527437dab72c56ccf2a638c6a0e9f4c61bd24a17249a",
+      "kind": "transparent"
+    },
+    {
+      "address": "0x74F054F2BF30De952463444a97dBbBaA7Cd5F59B",
+      "txHash": "0x72783ec6e65487ea477e6076c655bcc288a3a55cbdf74af667774540c19d64c6",
+      "kind": "transparent"
+    }
+  ],
+  "impls": {
+    "a1a6516f337456eb8b2050e68766b70a8bbc13852ffe5db4610681beb5aa2306": {
+      "address": "0x8F987d0abC3934fd1b20177777d0e564e01e28F3",
+      "txHash": "0x299cd005723e3b0313dff393326be5362923a9e46118b3c92bcbdf50c3835797",
+      "layout": {
+        "solcVersion": "0.8.20",
+        "storage": [
+          {
+            "label": "cloudToken",
+            "offset": 0,
+            "slot": "0",
+            "type": "t_contract(IERC20)1372",
+            "contract": "CloudUtils",
+            "src": "contracts/CloudUtils.sol:9"
+          },
+          {
+            "label": "excludedFromCirculatingSupply",
+            "offset": 0,
+            "slot": "1",
+            "type": "t_array(t_address)dyn_storage",
+            "contract": "CloudUtils",
+            "src": "contracts/CloudUtils.sol:10"
+          },
+          {
+            "label": "__gap",
+            "offset": 0,
+            "slot": "2",
+            "type": "t_array(t_uint256)50_storage",
+            "contract": "CloudUtils",
+            "src": "contracts/CloudUtils.sol:65"
+          }
+        ],
+        "types": {
+          "t_address": {
+            "label": "address",
+            "numberOfBytes": "20"
+          },
+          "t_bool": {
+            "label": "bool",
+            "numberOfBytes": "1"
+          },
+          "t_struct(InitializableStorage)73_storage": {
+            "label": "struct Initializable.InitializableStorage",
+            "members": [
+              {
+                "label": "_initialized",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "_initializing",
+                "type": "t_bool",
+                "offset": 8,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(OwnableStorage)13_storage": {
+            "label": "struct OwnableUpgradeable.OwnableStorage",
+            "members": [
+              {
+                "label": "_owner",
+                "type": "t_address",
+                "offset": 0,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_uint64": {
+            "label": "uint64",
+            "numberOfBytes": "8"
+          },
+          "t_array(t_address)dyn_storage": {
+            "label": "address[]",
+            "numberOfBytes": "32"
+          },
+          "t_array(t_uint256)50_storage": {
+            "label": "uint256[50]",
+            "numberOfBytes": "1600"
+          },
+          "t_contract(IERC20)1372": {
+            "label": "contract IERC20",
+            "numberOfBytes": "20"
+          },
+          "t_uint256": {
+            "label": "uint256",
+            "numberOfBytes": "32"
+          }
+        },
+        "namespaces": {
+          "erc7201:openzeppelin.storage.Ownable": [
+            {
+              "contract": "OwnableUpgradeable",
+              "label": "_owner",
+              "type": "t_address",
+              "src": "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol:24",
+              "offset": 0,
+              "slot": "0"
+            }
+          ],
+          "erc7201:openzeppelin.storage.Initializable": [
+            {
+              "contract": "Initializable",
+              "label": "_initialized",
+              "type": "t_uint64",
+              "src": "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol:69",
+              "offset": 0,
+              "slot": "0"
+            },
+            {
+              "contract": "Initializable",
+              "label": "_initializing",
+              "type": "t_bool",
+              "src": "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol:73",
+              "offset": 8,
+              "slot": "0"
+            }
+          ]
+        }
+      }
+    }
+  }
+}
