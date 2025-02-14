@@ -11,7 +11,7 @@ contract CloudUtils is Initializable, OwnableUpgradeable {
 
     event ExclusionUpdated(address wallet, bool isExcluded);
 
-    /// @dev Prevents the implementation contract from being initialized separately
+    /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
     }
