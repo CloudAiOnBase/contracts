@@ -27,6 +27,9 @@
     "hardhat": "^2.22.18"
   },
   "dependencies": {
+    "@ethersproject/hardware-wallets": "^5.7.0",
+    "@ethersproject/providers": "^5.7.2",
+    "@ledgerhq/hw-transport-node-hid": "^6.29.5",
     "@openzeppelin/contracts": "^5.2.0",
     "@openzeppelin/contracts-upgradeable": "^5.2.0"
   }

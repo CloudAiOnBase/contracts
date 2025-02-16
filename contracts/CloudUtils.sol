@@ -64,6 +64,10 @@ contract CloudUtils is Initializable, OwnableUpgradeable {
     function getExcludedAddresses() external view returns (address[] memory) {
         return excludedFromCirculatingSupply;
     }
+    
+    function getVersion() public pure returns (string memory) {
+        return "CloudUtils v1.0";
+    }
 
     /// @dev Storage gap for upgrade safety, prevents storage conflicts in future versions
     uint256[50] private __gap;
