@@ -10,15 +10,15 @@ contract CloudUtils is Initializable, OwnableUpgradeable {
     address[] private excludedFromCirculatingSupply; // Stores excluded addresses
 
     // Staking parameters
-    uint256 public minStakeAmount;
-    uint256 public cooldown;
-    uint256 public governanceInactivityThreshold;
-    uint256 public autoUnstakePeriod;
-    uint256 public aprMin;
-    uint256 public aprMax;
-    uint256 public stakedCircSupplyMin;
-    uint256 public stakedCircSupplyMax;
-    uint256 public cachingPeriod;
+    uint256 private minStakeAmount;
+    uint256 private cooldown;
+    uint256 private governanceInactivityThreshold;
+    uint256 private autoUnstakePeriod;
+    uint256 private aprMin;
+    uint256 private aprMax;
+    uint256 private stakedCircSupplyMin;
+    uint256 private stakedCircSupplyMax;
+    uint256 private cachingPeriod;
 
     event ExclusionUpdated(address wallet, bool isExcluded);
 
