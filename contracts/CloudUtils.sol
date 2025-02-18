@@ -126,12 +126,14 @@ contract CloudUtils is Initializable, OwnableUpgradeable {
                 aprMax = values[i];
 
             } else if (keys[i] == uint8(StakingParam.StakedCircSupplyMin)) {
-                // stakedCircSupplyMin can be 0    
+                // stakedCircSupplyMin can be 0
+                require(values[i] <= 100, "stakedCircSupplyMin must be <= 100");
                 stakedCircSupplyMin = values[i];
 
             } else if (keys[i] == uint8(StakingParam.StakedCircSupplyMax)) {
                 // Validate that stakedCircSupplyMax is greater than or equal to stakedCircSupplyMin.
                 require(values[i] >= stakedCircSupplyMin, "stakedCircSupplyMax must be >= stakedCircSupplyMin");
+                require(values[i] <= 100, "stakedCircSupplyMax must be <= 100");
                 stakedCircSupplyMax = values[i];
 
             } else if (keys[i] == uint8(StakingParam.CachingPeriod)) {
