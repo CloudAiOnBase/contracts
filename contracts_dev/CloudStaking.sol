@@ -6,10 +6,22 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
-contract CloudAIStaking is Ownable {
+interface ICloudUtils {
+    function getStakingParams() external view returns (
+        uint256, uint256, uint256, uint256, uint256, uint256, uint256, uint256, uint256
+    );
+}
+
+interface ICloudRewardPool {
+    function withdrawRewards(address recipient, uint256 amount) external;
+}
+
+contract CloudStaking is Ownable {
     using SafeERC20 for IERC20;
 
-    IERC20 public immutable cloudToken;
+    IERC20              public immutable cloudToken;
+    ICloudUtils         public cloudUtils;
+    ICloudRewardPool    public cloudRewardPool;
 
     uint256 private minStakeAmount;                  // e.g. 100 CLOUD (in token smallest units)
     uint256 private cooldown;                        // 10 days cooldown for unstaking
@@ -21,10 +33,12 @@ contract CloudAIStaking is Ownable {
     uint256 private stakedCircSupplyMax;             // 50%
     uint256 private cachingPeriod;                   // 24 hours
     uint256 private lastParamsUpdate;                // Caching period for external parameters
+    uint256 private lastProcessedStaker;
     bool public emergencyMode;  
     
     struct Staker {
         uint256 stakedAmount;
+        uint256 lastRewardClaimTime;
         uint256 unstakingAmount;
         uint256 unstakingStartTime; // when the unstaking (cooldown) began
         uint256 totalEarnedRewards;
@@ -36,30 +50,30 @@ contract CloudAIStaking is Ownable {
     mapping(address => uint256) private stakerIndex; // index+1 in stakerList
 
     // --- Events ---
-    event getStakersData            (address indexed staker, uint256 amount);
-    event UnstakeInitiated          (address indexed staker, uint256 amount);
-    event UnstakeCancelled          (address indexed staker, uint256 amount);
-    event UnstakeCancelled          (address indexed staker, uint256 amount);
-    event RewardsClaimed            (address indexed staker, uint256 rewards);
-    event EmergencyModeActivated    ();
-    event EmergencyWithdrawn        (address indexed staker, uint256 amount, uint256 rewards);
-    event getStakersData            (address indexed staker, uint256 stakedAmount);
+    event CloudUtilsUpdated       (address oldCloudUtils, address newCloudUtils);
+    event Staked                  (address indexed staker, uint256 stakedAmount);
+    event RewardsClaimed          (address indexed staker, uint256 rewards);
+    event Unstaking               (address indexed staker, uint256 amount);
+    event Unstaked                (address indexed staker, uint256 amount);
+    event UnstakeCancelled        (address indexed staker, uint256 amount);
+    event StakerData              (address indexed staker, uint256 totalStakedAmount);
+   
 
-    // Constructor initializes the token address and initial parameters.
-    constructor(IERC20 _cloudToken, uint256 _minStakeAmount) {
-        cloudToken                      = _cloudToken;
-        minStakeAmount                  = _minStakeAmount;    // minStakeAmount The minimum amount required to stake (e.g. 100 * 1e18 for 18 decimals).
-        cooldown                        = 10 days;
-        governanceInactivityThreshold   = 365 days;
-        autoUnstakePeriod               = 3 * 365 days;
-        aprMin                          = 4; // 4%
-        aprMax                          = 10; // 10%
-        stakedCircSupplyMin             = 10; // 10%
-        stakedCircSupplyMax             = 50; // 50%
+    // Constructor initializes the token, utility contract, and reward pool.
+    constructor(address _cloudToken, address _cloudUtils, address _cloudRewardPool) {
+        require(_cloudToken         != address(0), "Invalid token address");
+        require(_cloudUtils         != address(0), "Invalid utils contract address");
+        require(_cloudRewardPool    != address(0), "Invalid reward pool address");
 
-        lastParamsUpdate = block.timestamp;
+        cloudToken          = IERC20(_cloudToken);        
+        cloudUtils          = ICloudUtils(_cloudUtils);
+        cloudRewardPool     = ICloudRewardPool(_cloudRewardPool);
     }
 
+    modifier autoUpdateStakingParams() {
+        _tryUpdateStakingParams();
+        _;
+    }
 
     // Modifier to disallow actions during emergency mode.
     modifier notInEmergency() {
@@ -67,59 +81,90 @@ contract CloudAIStaking is Ownable {
         _;
     }
 
+    // TODO
+    // disable direct transfers to this contract
+
     // ============================================
     // PUBLIC FUNCTIONS
     // ============================================
 
-    // Stake tokens. Also cancels any pending unstake.
-    function stake(uint256 amount) external notInEmergency {
-        require(amount >= minStakeAmount, "Amount below minimum stake");
+    // Updates the CloudUtils contract address in case of migration
+    function setCloudUtils          (address _newCloudUtils)                            external onlyOwner {
+        require(_newCloudUtils != address(0),           "Invalid address");
+        require(_newCloudUtils != address(cloudUtils),  "Same address already set");
 
-        // Update rewards and last activity before modifying state.
-        _updateRewards(msg.sender);
-        _updateActivity(msg.sender);
+        address oldCloudUtils = address(cloudUtils);
+        cloudUtils = ICloudUtils(_newCloudUtils);
+
+        emit CloudUtilsUpdated(oldCloudUtils, _newCloudUtils);
+    }
+
+    // recaching/updating of parameters
+    function updateStakingParams    ()                                                  external onlyOwner notInEmergency {
+        _updateStakingParams();
+    }
+
+    // Stake tokens. Also cancels any pending unstake.
+    function stake                  (uint256 amount)                                    external notInEmergency autoUpdateStakingParams {
+        require(amount > 0,       "Stake amount must be greater than zero");
 
         Staker storage st = stakers[msg.sender];
+
+        require(st.stakedAmount + st.unstakingAmount + amount >= minStakeAmount,    "Total stake below minimum required");
+        require(cloudToken.allowance(msg.sender, address(this)) >= amount,          "Insufficient allowance");
+
+        // Claim any pending rewards before modifying the stake balance.
+        claimRewards();
 
         // If the staker had initiated an unstake, cancel it.
         if (st.unstakingAmount > 0) {
-            uint256 cancelled = st.unstakingAmount;
-            st.stakedAmount += cancelled;
-            st.unstakingAmount = 0;
-            st.unstakingStartTime = 0;
-            emit UnstakeCancelled(msg.sender, cancelled);
+            uint256 cancelled       = st.unstakingAmount;
+            st.stakedAmount        += cancelled;
+            st.unstakingAmount      = 0;
+            st.unstakingStartTime   = 0;
+            emit UnstakeCancelled (msg.sender, cancelled);
         }
 
-        // Transfer tokens from the staker.
-        cloudToken.safeTransferFrom(msg.sender, address(this), amount);
-
-        // Add new staker if needed.
-        if (st.lastActivityTime == 0 && st.stakedAmount == 0) {
+        // Create/update staker
+        if (st.lastActivityTime == 0) {
             _addStaker(msg.sender);
         }
+        st.stakedAmount     += amount;
+        st.lastActivityTime  = block.timestamp;
 
-        st.stakedAmount += amount;
-        st.lastActivityTime = block.timestamp;
-        emit Staked(msg.sender, amount);
-        emit StakerData(msg.sender, st.stakedAmount);
+        // Transfer tokens from the staker.
+        cloudToken.safeTransferFrom(msg.sender, address(this), amount);        
+
+        //event
+        emit Staked     (msg.sender, amount);
+        emit StakerData (msg.sender, st.stakedAmount);
     }
 
     // Claim accrued staking rewards
-    function claimRewards() external notInEmergency {
-        _updateRewards(msg.sender);
-        _updateActivity(msg.sender);
-
+    function claimRewards()                                                             external notInEmergency autoUpdateStakingParams {
         Staker storage st = stakers[msg.sender];
-        uint256 rewards = st.unclaimedRewards;
+
+        require(st.stakedAmount > 0,                        "Not an active staker");
+        require(block.timestamp > st.lastRewardClaimTime,   "Already claimed recently");
+
+        // Calculate pending rewards dynamically
+        uint256 timeElapsed = block.timestamp - st.lastRewardClaimTime;
+        uint256 rewards = (st.stakedAmount * rewardRate * timeElapsed) / rewardTimeUnit; // Example formula
+
         require(rewards > 0, "No rewards available");
 
-        st.unclaimedRewards = 0;
-        cloudToken.safeTransfer(msg.sender, rewards);
+        st.lastRewardClaimTime  = block.timestamp; // Update last reward claim time BEFORE external call, prevent double claiming before transfer
+        st.lastActivityTime     = block.timestamp;
+
+        // Transfer rewards from the reward pool
+        cloudRewardPool.withdrawRewards(msg.sender, rewards);
+
+        // Emit event
         emit RewardsClaimed(msg.sender, rewards);
     }
 
     // Initiate unstaking for a specified amount.
-    function initiateUnstake(uint256 amount) external notInEmergency {
+    function initiateUnstake        (uint256 amount)                                    external notInEmergency {
         Staker storage st = stakers[msg.sender];
         require(amount > 0, "Amount must be > 0");
         require(amount <= st.stakedAmount, "Insufficient staked balance");
@@ -134,8 +179,22 @@ contract CloudAIStaking is Ownable {
         emit StakerData(msg.sender, st.stakedAmount);
     }
 
+    // Allows users to cancel their unstaking before claiming and restake their tokens.
+    function cancelUnstaking        ()                                                  external notInEmergency {
+        Staker storage st = stakers[msg.sender];
+
+        require(st.stakedAmount == 0, "You are already staked");
+        require(st.unstakedTimestamp > 0, "No unstaking in progress");
+
+        // Restore stake (before claiming)
+        st.stakedAmount = getPendingUnstakedAmount(msg.sender);
+        st.unstakedTimestamp = 0; // Reset unstake timestamp
+
+        emit UnstakingCancelled(msg.sender, st.stakedAmount);
+    }
+
     // After the cooldown period, claim the unstaked tokens.
-    function claimUnstakedTokens() external notInEmergency {
+    function claimUnstakedTokens    ()                                                  external notInEmergency autoUpdateStakingParams {
         Staker storage st = stakers[msg.sender];
         require(st.unstakingAmount > 0, "No tokens in unstaking process");
         require(block.timestamp >= st.unstakingStartTime + cooldown, "Cooldown period not passed");
@@ -152,8 +211,33 @@ contract CloudAIStaking is Ownable {
         emit StakerData(msg.sender, st.stakedAmount);
     }
 
+    // Processes automatic unstaking for inactive users in batches.
+    function processAutoUnstake     (uint256 batchSize, bool resetLastProcessedStaker)  external onlyOwner {
+        if (resetLastProcessedStaker) {
+            lastProcessedStaker = 0;
+        }
+
+        uint256 processedCount = 0;
+        uint256 i              = lastProcessedStaker;
+        uint256 listLength     = stakerList.length;
+
+        while (i < listLength && processedCount < batchSize) {
+            address stakerAddr = stakerList[i];
+            Staker storage st  = stakers[stakerAddr];
+
+            if (st.stakedAmount > 0 && block.timestamp >= st.lastActivityTime + autoUnstakePeriod) {
+                _autoUnstake(stakerAddr);
+            }
+
+            i++;
+            processedCount++;
+        }
+
+        lastProcessedStaker = (i >= listLength) ? 0 : i;
+    }
+
     // Trigger emergency mode, unstake all the funds immediately and disable .
-    function emergencyWithdraw() external {
+    function emergencyWithdraw      ()                                                  external onlyOwner notInEmergency {
         require(emergencyMode, "Not in emergency mode");
 
         emergencyMode = true;
@@ -176,24 +260,15 @@ contract CloudAIStaking is Ownable {
         emit EmergencyWithdrawn(msg.sender, totalAmount, 0);
     }
 
-    // Returns unallocated rewards (i.e. tokens held in the contract not tied to staked funds) back to a community fund.
-    function emptyRewardsPool(address communityFund) {
-        uint256 contractBalance = cloudToken.balanceOf(address(this));
-        uint256 totalStaked = getTotalStakedTokens();
-        uint256 unallocated = contractBalance > totalStaked ? contractBalance - totalStaked : 0;
-        require(unallocated > 0, "No unallocated rewards");
+    // ============================================
+    // INTERNAL FUNCTIONS
+    // ============================================
 
-        cloudToken.safeTransfer(communityFund, unallocated);
-    }
+    // Recaching/updating of parameters
+    function _updateStakingParams       () internal {
 
-    // Empty APR function; to be implemented with APR logic later.
-    function getAPR() public view returns (uint256) {
-        return 0;
-    }
-
-    // recaching/updating of parameters
-    function updateStakingParams() external onlyOwner {
-       (
+        require(address(cloudUtils) != address(0), "CloudUtils not set");
+        (
             uint256 _minStakeAmount,
             uint256 _cooldown,
             uint256 _governanceInactivityThreshold,
@@ -218,34 +293,28 @@ contract CloudAIStaking is Ownable {
         lastParamsUpdate = block.timestamp;
     }
 
-    // ============================================
-    // INTERNAL FUNCTIONS
-    // ============================================
-
     // Automatically update staking parameters if the caching period has passed.
-    function _tryUpdateStakingParams() internal {
+    function _tryUpdateStakingParams    () internal {
         if (block.timestamp >= lastParamsUpdate + cachingPeriod) {
-             updateStakingParams();
+             _updateStakingParams();
+        }
+    }
+
+    // Adds a new staker to the tracking list if not already present.
+    function _addStaker                 (address stakerAddr) internal {
+        if (stakerIndex[stakerAddr] == 0) {
+            stakerList.push(stakerAddr);
+            stakerIndex[stakerAddr] = stakerList.length; // store index+1
         }
     }
 
     // Placeholder for rewards update logic.
-    function _updateRewards(address stakerAddr) internal {
+    function _updateRewards             (address stakerAddr) internal {
         // Future implementation: update staker’s unclaimedRewards based on APR, staking time, etc.
     }
 
-    // Updates the staker’s last activity timestamp and checks for auto-unstake due to inactivity.
-    function _updateActivity(address stakerAddr) internal {
-        Staker storage st = stakers[stakerAddr];
-        if (st.lastActivityTime != 0 && block.timestamp >= st.lastActivityTime + autoUnstakePeriod) {
-            _autoUnstake(stakerAddr);
-        } else {
-            st.lastActivityTime = block.timestamp;
-        }
-    }
-
     // Automatically unstakes a staker who has been inactive for 3 years.
-    function _autoUnstake(address stakerAddr) internal {
+    function _autoUnstake               (address stakerAddr) internal {
         Staker storage st = stakers[stakerAddr];
         uint256 totalToReturn = st.stakedAmount + st.unclaimedRewards;
         // Reset staker data.
@@ -264,16 +333,8 @@ contract CloudAIStaking is Ownable {
         emit Unstaked(stakerAddr, totalToReturn);
     }
 
-    // Adds a new staker to the tracking list if not already present.
-    function _addStaker(address stakerAddr) internal {
-        if (stakerIndex[stakerAddr] == 0) {
-            stakerList.push(stakerAddr);
-            stakerIndex[stakerAddr] = stakerList.length; // store index+1
-        }
-    }
-
     // Removes a staker from the tracking list.
-    function _removeStaker(address stakerAddr) internal {
+    function _removeStaker              (address stakerAddr) internal {
         uint256 index = stakerIndex[stakerAddr];
         if (index > 0) {
             uint256 actualIndex = index - 1;
@@ -288,13 +349,17 @@ contract CloudAIStaking is Ownable {
         }
     }
 
-    
     // ============================================
     // VIEW FUNCTIONS
     // ============================================
 
+    // Returns whether all stakers have been processed and, if not, the last processed staker index.
+    function getAutoUnstakeProgress() external view returns (bool reachedEnd, uint256 lastIndex) {
+        return (lastProcessedStaker == 0, lastProcessedStaker);
+    }
+
     /// @notice Returns detailed staking info for a given staker.
-    function getStakerInfo(address stakerAddr)
+    function getStakerInfo          (address stakerAddr)
         external
         view
         returns (
@@ -316,12 +381,12 @@ contract CloudAIStaking is Ownable {
     }
 
     /// @notice Returns the total number of stakers.
-    function getTotalStakers() public view returns (uint256) {
+    function getTotalStakers        () public view returns (uint256) {
         return stakerList.length;
     }
 
     /// @notice Returns the sum of active staked tokens across all stakers.
-    function getTotalStakedTokens() public view returns (uint256 total) {
+    function getTotalStakedTokens   () public view returns (uint256 total) {
         for (uint256 i = 0; i < stakerList.length; i++) {
             total += stakers[stakerList[i]].stakedAmount;
         }
@@ -341,7 +406,7 @@ contract CloudAIStaking is Ownable {
     /// @notice Provides paginated access to stakers and their staked amounts.
     /// @param start The starting index.
     /// @param count The number of stakers to retrieve.
-    function getAllStakers(uint256 start, uint256 count) external view returns (address[] memory, uint256[] memory) {
+    function getAllStakers          (uint256 start, uint256 count) external view returns (address[] memory, uint256[] memory) {
         uint256 end = start + count;
         if (end > stakerList.length) {
             end = stakerList.length;
@@ -359,7 +424,7 @@ contract CloudAIStaking is Ownable {
 
     /// @notice Fetches staked amounts for a list of stakers.
     /// @param stakersAddresses The addresses of stakers.
-    function getStakersData(address[] memory stakersAddresses) external view returns (uint256[] memory) {
+    function getStakersData         (address[] memory stakersAddresses) external view returns (uint256[] memory) {
         uint256[] memory amounts = new uint256[](stakersAddresses.length);
         for (uint256 i = 0; i < stakersAddresses.length; i++) {
             amounts[i] = stakers[stakersAddresses[i]].stakedAmount;
@@ -368,7 +433,7 @@ contract CloudAIStaking is Ownable {
     }
 
     /// @notice Returns all staking-related parameters.
-    function getStakingParams()
+    function getStakingParams       ()
         external
         view
         returns (
@@ -390,5 +455,10 @@ contract CloudAIStaking is Ownable {
         _aprMax = aprMax;
         _stakedCircSupplyMin = stakedCircSupplyMin;
         _stakedCircSupplyMax = stakedCircSupplyMax;
+    }
+
+    // Empty APR function; to be implemented with APR logic later.
+    function getAPR                 () public view returns (uint256) {
+        return 0;
     }
 }

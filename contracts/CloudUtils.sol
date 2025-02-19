@@ -123,6 +123,7 @@ contract CloudUtils is Initializable, OwnableUpgradeable {
                 // Allow aprMax to be 0 (which can disable rewards) or a positive value.
                 // Ensure it is greater than or equal to aprMin.
                 require(values[i] >= aprMin, "aprMax must be >= aprMin");
+                require(values[i] <= 100, "aprMax must be <= 100");
                 aprMax = values[i];
 
             } else if (keys[i] == uint8(StakingParam.StakedCircSupplyMin)) {
