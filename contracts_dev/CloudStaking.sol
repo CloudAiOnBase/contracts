@@ -60,6 +60,7 @@ contract CloudAIStaking is Ownable {
         lastParamsUpdate = block.timestamp;
     }
 
+
     // Modifier to disallow actions during emergency mode.
     modifier notInEmergency() {
         require(!emergencyMode, "Operation not allowed in emergency mode");
