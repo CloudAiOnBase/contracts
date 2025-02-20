@@ -3,9 +3,10 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-contract CloudUtils is Initializable, OwnableUpgradeable {
+contract CloudUtils is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     IERC20 public cloudToken;
     address[] private excludedFromCirculatingSupply;
 
@@ -18,8 +19,8 @@ contract CloudUtils is Initializable, OwnableUpgradeable {
 
     function initialize(address _cloudToken) public initializer {
         require(_cloudToken != address(0), "Invalid token address");
-
-        __Ownable_init(msg.sender);
+        __Ownable_init();
+        __UUPSUpgradeable_init();
 
         cloudToken = IERC20(_cloudToken);
     }
@@ -54,6 +55,14 @@ contract CloudUtils is Initializable, OwnableUpgradeable {
     }
 
     // ============================================
+    // INTERNAL FUNCTIONS
+    // ============================================
+
+
+    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
+
+
+    // ============================================
     // VIEW FUNCTIONS
     // ============================================
 
@@ -78,6 +87,7 @@ contract CloudUtils is Initializable, OwnableUpgradeable {
     function getVersion() public pure returns (string memory) {
         return "CloudUtils v1.1";
     }
+
 
     // storage gap for upgrade safety, prevents storage conflicts in future versions
     uint256[50] private __gap;
