@@ -25,7 +25,7 @@ contract CloudRewardPool is Ownable {
     }
 
     // Allows the staking contract to withdraw rewards for users.
-    function withdrawRewards(address recipient, uint256 amount) external {
+    function distributeRewards(address recipient, uint256 amount) external {
         require(msg.sender == stakingContract, "Only staking contract can withdraw");
         require(amount > 0, "Amount must be greater than zero");
         require(cloudToken.balanceOf(address(this)) >= amount, "Insufficient rewards");
@@ -39,6 +39,7 @@ contract CloudRewardPool is Ownable {
         require(amount > 0, "Amount must be greater than zero");
 
         cloudToken.transferFrom(msg.sender, address(this), amount);
+        
         emit RewardsDeposited(msg.sender, amount);
     }
 
@@ -57,3 +58,7 @@ contract CloudRewardPool is Ownable {
         cloudToken.safeTransfer(communityFund, unallocated);
     }
 }
+
+
+    // TODO
+    // disable direct transfers to this contract

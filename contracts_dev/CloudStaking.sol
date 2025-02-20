@@ -1,112 +1,191 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-// Import OpenZeppelin libraries for ERC20 and Ownable functionality.
+// Import upgradeable contract modules from OpenZeppelin
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
 
-interface ICloudUtils {
-    function getStakingParams() external view returns (
-        uint256, uint256, uint256, uint256, uint256, uint256, uint256, uint256, uint256
-    );
+interface ICloudStakeVault {
+    function deposit            (address user, uint256 amount) external;
+    function withdraw           (address user, uint256 amount) external;
 }
 
 interface ICloudRewardPool {
-    function withdrawRewards(address recipient, uint256 amount) external;
+    function distributeRewards  (address user, uint256 amount) external;
+    function getRewardBalance() external view returns (uint256);
 }
 
-contract CloudStaking is Ownable {
+interface ICloudUtils {
+    function getCirculatingSupply() external view returns (uint256);
+}
+
+
+contract StakingContract is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     using SafeERC20 for IERC20;
 
     IERC20              public immutable cloudToken;
-    ICloudUtils         public cloudUtils;
+    ICloudStakeVault    public cloudStakeVault;
     ICloudRewardPool    public cloudRewardPool;
+    ICloudUtils         public cloudUtils;
 
-    uint256 private minStakeAmount;                  // e.g. 100 CLOUD (in token smallest units)
-    uint256 private cooldown;                        // 10 days cooldown for unstaking
-    uint256 private governanceInactivityThreshold;   // 1 year inactivity threshold (for governance tally)
-    uint256 private autoUnstakePeriod;               // 3 years auto-unstake for inactive stakers
-    uint256 private aprMin;                          // APR range minimum (4%)
-    uint256 private aprMax;                          // APR range maximum (10%)
-    uint256 private stakedCircSupplyMin;             // 10%
-    uint256 private stakedCircSupplyMax;             // 50%
-    uint256 private cachingPeriod;                   // 24 hours
-    uint256 private lastParamsUpdate;                // Caching period for external parameters
+    bool public isPaused;
+    uint256 public totalStaked;
+    uint256 private minStakeAmount;
+    uint256 private cooldown;
+    uint256 private governanceInactivityThreshold;
+    uint256 private autoUnstakePeriod;
+    uint256 private aprMin;
+    uint256 private aprMax;
+    uint256 private stakedCircSupplyMin;
+    uint256 private stakedCircSupplyMax;
     uint256 private lastProcessedStaker;
-    bool public emergencyMode;  
     
     struct Staker {
         uint256 stakedAmount;
         uint256 lastRewardClaimTime;
         uint256 unstakingAmount;
-        uint256 unstakingStartTime; // when the unstaking (cooldown) began
+        uint256 unstakingStartTime;
         uint256 totalEarnedRewards;
-        uint256 lastActivityTime;   // last time the staker interacted (stake/unstake/claim)
+        uint256 lastActivityTime;
     }
 
     mapping(address => Staker) public stakers;
     address[] public stakerList;
-    mapping(address => uint256) private stakerIndex; // index+1 in stakerList
+    mapping(address => uint256) private stakerIndex;
 
-    // --- Events ---
-    event CloudUtilsUpdated       (address oldCloudUtils, address newCloudUtils);
     event Staked                  (address indexed staker, uint256 stakedAmount);
     event RewardsClaimed          (address indexed staker, uint256 rewards);
     event Unstaking               (address indexed staker, uint256 amount);
     event Unstaked                (address indexed staker, uint256 amount);
     event UnstakeCancelled        (address indexed staker, uint256 amount);
     event StakerData              (address indexed staker, uint256 totalStakedAmount);
-   
 
-    // Constructor initializes the token, utility contract, and reward pool.
-    constructor(address _cloudToken, address _cloudUtils, address _cloudRewardPool) {
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() initializer {}
+
+    /// @notice Initializes the contract replacing a constructor
+    function initialize(address _cloudToken, address _cloudStakeVault, address _cloudRewardPool, address _cloudUtils) public initializer {
         require(_cloudToken         != address(0), "Invalid token address");
-        require(_cloudUtils         != address(0), "Invalid utils contract address");
+        require(_cloudStakeVault    != address(0), "Invalid stake vault address");
         require(_cloudRewardPool    != address(0), "Invalid reward pool address");
+        require(_cloudUtils         != address(0), "Invalid utils contract address");
 
-        cloudToken          = IERC20(_cloudToken);        
-        cloudUtils          = ICloudUtils(_cloudUtils);
+        __Ownable_init();
+        __UUPSUpgradeable_init();
+
+        cloudToken          = IERC20(_cloudToken);
+        cloudStakeVault     = ICloudStakeVault(_cloudStakeVault);
         cloudRewardPool     = ICloudRewardPool(_cloudRewardPool);
+        cloudUtils          = ICloudUtils(_cloudUtils);
     }
 
-    modifier autoUpdateStakingParams() {
-        _tryUpdateStakingParams();
+    modifier notPaused() {
+        require(!isPaused, "Operation not allowed while contract is paused");
         _;
     }
 
-    // Modifier to disallow actions during emergency mode.
-    modifier notInEmergency() {
-        require(!emergencyMode, "Operation not allowed in emergency mode");
-        _;
+    // Enum to represent each staking parameter.
+    enum StakingParam {
+        MinStakeAmount,               // 0
+        Cooldown,                     // 1
+        GovernanceInactivityThreshold,// 2
+        AutoUnstakePeriod,            // 3
+        AprMin,                       // 4
+        AprMax,                       // 5
+        StakedCircSupplyMin,          // 6
+        StakedCircSupplyMax,          // 7
     }
 
-    // TODO
-    // disable direct transfers to this contract
 
     // ============================================
     // PUBLIC FUNCTIONS
     // ============================================
 
-    // Updates the CloudUtils contract address in case of migration
-    function setCloudUtils          (address _newCloudUtils)                            external onlyOwner {
-        require(_newCloudUtils != address(0),           "Invalid address");
-        require(_newCloudUtils != address(cloudUtils),  "Same address already set");
 
-        address oldCloudUtils = address(cloudUtils);
-        cloudUtils = ICloudUtils(_newCloudUtils);
-
-        emit CloudUtilsUpdated(oldCloudUtils, _newCloudUtils);
+    function pauseContract()                                                            external onlyOwner {
+        isPaused = true;
     }
 
-    // recaching/updating of parameters
-    function updateStakingParams    ()                                                  external onlyOwner notInEmergency {
-        _updateStakingParams();
+    function unpauseContract()                                                          external onlyOwner {
+        isPaused = false;
     }
 
-    // Stake tokens. Also cancels any pending unstake.
-    function stake                  (uint256 amount)                                    external notInEmergency autoUpdateStakingParams {
-        require(amount > 0,       "Stake amount must be greater than zero");
+    /**
+     * @notice Updates one or more staking parameters based on the provided keys and values.
+     * @param keys An array of keys representing the staking parameters to update.
+     *             Each key is a uint8 corresponding to a value in the StakingParam enum.
+     * @param values An array of new values for the corresponding parameters.
+     * Requirements:
+     * - `keys` and `values` arrays must have the same length.
+     * - Only the contract owner can call this function.
+     */
+    function updateStakingParameters(uint8[] calldata keys, uint256[] calldata values)  external onlyOwner notPaused {
+        // IMPORTANT: When updating multiple parameters in a single call, the order matters.
+        // For example, if both aprMin and aprMax are being updated, ensure that either aprMin is updated before aprMax,
+        // or that the final values satisfy the condition (aprMax >= aprMin). Otherwise, the validation check for aprMax may fail.
+
+        require(keys.length == values.length, "Array lengths mismatch");
+        for (uint256 i = 0; i < keys.length; i++) {
+            if (keys[i] == uint8(StakingParam.MinStakeAmount)) {
+                require(values[i] > 0,                          "minStakeAmount must be a positive integer");
+
+                minStakeAmount = values[i];
+
+            } else if (keys[i] == uint8(StakingParam.Cooldown)) {
+                require(values[i] > 0,                          "Cooldown must be positive");
+                require(values[i] % 1 days == 0,                "Cooldown must be in whole days");
+                require(values[i] <= 30,                        "Cooldown must be less than 30 days");
+
+                cooldown = values[i];
+
+            } else if (keys[i] == uint8(StakingParam.GovernanceInactivityThreshold)) {
+                require(values[i] > 0,                          "GovernanceInactivityThreshold must be positive");
+                require(values[i] % 1 days == 0,                "GovernanceInactivityThreshold must be in whole days");
+
+                governanceInactivityThreshold = values[i];
+
+            } else if (keys[i] == uint8(StakingParam.AutoUnstakePeriod)) {
+                require(values[i] > 0,                          "AutoUnstakePeriod must be positive");
+                require(values[i] % 1 days == 0,                "AutoUnstakePeriod must be in whole days");
+
+                autoUnstakePeriod = values[i];
+
+            } else if (keys[i] == uint8(StakingParam.AprMin)) {
+                require(values[i] <= aprMax,                    "aprMin must be <= aprMax");
+                require(values[i] <= 100,                       "aprMin must be <= 100");
+
+                aprMin = values[i];
+
+            } else if (keys[i] == uint8(StakingParam.AprMax)) {
+                require(values[i] >= aprMin,                    "aprMax must be >= aprMin");
+                require(values[i] <= 100,                       "aprMax must be <= 100");
+
+                aprMax = values[i];
+
+            } else if (keys[i] == uint8(StakingParam.StakedCircSupplyMin)) {
+                require(values[i] <= stakedCircSupplyMax,       "stakedCircSupplyMin must be <= stakedCircSupplyMax");
+                require(values[i] <= 100,                       "stakedCircSupplyMin must be <= 100");
+
+                stakedCircSupplyMin = values[i];
+
+            } else if (keys[i] == uint8(StakingParam.StakedCircSupplyMax)) {
+                require(values[i] >  0,                         "stakedCircSupplyMax must be > 0");
+                require(values[i] > stakedCircSupplyMin,       "stakedCircSupplyMax must be > stakedCircSupplyMin");
+                require(values[i] <= 100,                       "stakedCircSupplyMax must be <= 100");
+
+                stakedCircSupplyMax = values[i];
+             } else {
+                revert("Invalid parameter key");
+            }
+        }
+    }
+
+    function stake(uint256 amount)                                                      external notPaused {
+        require(amount > 0,                 "Stake amount must be greater than zero");
+        require(tx.origin == msg.sender,    "Smart contracts cannot stake");
 
         Staker storage st = stakers[msg.sender];
 
@@ -119,346 +198,119 @@ contract CloudStaking is Ownable {
         // If the staker had initiated an unstake, cancel it.
         if (st.unstakingAmount > 0) {
             uint256 cancelled       = st.unstakingAmount;
+
             st.stakedAmount        += cancelled;
+            totalStaked            += amount;
             st.unstakingAmount      = 0;
             st.unstakingStartTime   = 0;
+
             emit UnstakeCancelled (msg.sender, cancelled);
         }
 
         // Create/update staker
-        if (st.lastActivityTime == 0) {
-            _addStaker(msg.sender);
+        if (stakerIndex[msg.sender] == 0) {
+            stakerList.push(msg.sender);
+            stakerIndex[msg.sender] = stakerList.length; // store index+1
         }
-        st.stakedAmount     += amount;
-        st.lastActivityTime  = block.timestamp;
+        st.stakedAmount       += amount;
+        totalStaked           += amount;
+        st.lastRewardClaimTime = block.timestamp; // initialize this var
+        st.lastActivityTime    = block.timestamp;
 
         // Transfer tokens from the staker.
-        cloudToken.safeTransferFrom(msg.sender, address(this), amount);        
+        cloudStakeVault.deposit(msg.sender, amount);
 
         //event
         emit Staked     (msg.sender, amount);
         emit StakerData (msg.sender, st.stakedAmount);
     }
 
-    // Claim accrued staking rewards
-    function claimRewards()                                                             external notInEmergency autoUpdateStakingParams {
+    function claimRewards()                                                             external notPaused {
         Staker storage st = stakers[msg.sender];
 
         require(st.stakedAmount > 0,                        "Not an active staker");
         require(block.timestamp > st.lastRewardClaimTime,   "Already claimed recently");
 
-        // Calculate pending rewards dynamically
-        uint256 timeElapsed = block.timestamp - st.lastRewardClaimTime;
-        uint256 rewards = (st.stakedAmount * rewardRate * timeElapsed) / rewardTimeUnit; // Example formula
-
+        uint256 rewards = calculateRewards(msg.sender);
         require(rewards > 0, "No rewards available");
 
-        st.lastRewardClaimTime  = block.timestamp; // Update last reward claim time BEFORE external call, prevent double claiming before transfer
-        st.lastActivityTime     = block.timestamp;
-
+        st.lastRewardClaimTime   = block.timestamp; // Update last reward claim time BEFORE external call, prevent double claiming before transfer
+        st.lastActivityTime      = block.timestamp;
+        st.totalEarnedRewards   += rewards;
+        
         // Transfer rewards from the reward pool
-        cloudRewardPool.withdrawRewards(msg.sender, rewards);
+        cloudRewardPool.distributeRewards(msg.sender, rewards);
 
         // Emit event
         emit RewardsClaimed(msg.sender, rewards);
     }
 
-    // Initiate unstaking for a specified amount.
-    function initiateUnstake        (uint256 amount)                                    external notInEmergency {
-        Staker storage st = stakers[msg.sender];
-        require(amount > 0, "Amount must be > 0");
-        require(amount <= st.stakedAmount, "Insufficient staked balance");
-
-        _updateRewards(msg.sender);
-        _updateActivity(msg.sender);
-
-        st.stakedAmount -= amount;
-        st.unstakingAmount += amount;
-        st.unstakingStartTime = block.timestamp; // resets cooldown
-        emit UnstakeInitiated(msg.sender, amount);
-        emit StakerData(msg.sender, st.stakedAmount);
+    function rescueTokens(address token, uint256 amount) external onlyOwner {
+       IERC20(token).safeTransfer(owner(), amount);
     }
 
-    // Allows users to cancel their unstaking before claiming and restake their tokens.
-    function cancelUnstaking        ()                                                  external notInEmergency {
-        Staker storage st = stakers[msg.sender];
-
-        require(st.stakedAmount == 0, "You are already staked");
-        require(st.unstakedTimestamp > 0, "No unstaking in progress");
-
-        // Restore stake (before claiming)
-        st.stakedAmount = getPendingUnstakedAmount(msg.sender);
-        st.unstakedTimestamp = 0; // Reset unstake timestamp
-
-        emit UnstakingCancelled(msg.sender, st.stakedAmount);
-    }
-
-    // After the cooldown period, claim the unstaked tokens.
-    function claimUnstakedTokens    ()                                                  external notInEmergency autoUpdateStakingParams {
-        Staker storage st = stakers[msg.sender];
-        require(st.unstakingAmount > 0, "No tokens in unstaking process");
-        require(block.timestamp >= st.unstakingStartTime + cooldown, "Cooldown period not passed");
-
-        _updateRewards(msg.sender);
-        _updateActivity(msg.sender);
-
-        uint256 amountToClaim = st.unstakingAmount;
-        st.unstakingAmount = 0;
-        st.unstakingStartTime = 0;
-
-        cloudToken.safeTransfer(msg.sender, amountToClaim);
-        emit Unstaked(msg.sender, amountToClaim);
-        emit StakerData(msg.sender, st.stakedAmount);
-    }
-
-    // Processes automatic unstaking for inactive users in batches.
-    function processAutoUnstake     (uint256 batchSize, bool resetLastProcessedStaker)  external onlyOwner {
-        if (resetLastProcessedStaker) {
-            lastProcessedStaker = 0;
-        }
-
-        uint256 processedCount = 0;
-        uint256 i              = lastProcessedStaker;
-        uint256 listLength     = stakerList.length;
-
-        while (i < listLength && processedCount < batchSize) {
-            address stakerAddr = stakerList[i];
-            Staker storage st  = stakers[stakerAddr];
-
-            if (st.stakedAmount > 0 && block.timestamp >= st.lastActivityTime + autoUnstakePeriod) {
-                _autoUnstake(stakerAddr);
-            }
-
-            i++;
-            processedCount++;
-        }
-
-        lastProcessedStaker = (i >= listLength) ? 0 : i;
-    }
-
-    // Trigger emergency mode, unstake all the funds immediately and disable .
-    function emergencyWithdraw      ()                                                  external onlyOwner notInEmergency {
-        require(emergencyMode, "Not in emergency mode");
-
-        emergencyMode = true;
-
-        Staker storage st = stakers[msg.sender];
-        uint256 totalAmount = st.stakedAmount + st.unstakingAmount + st.unclaimedRewards;
-        require(totalAmount > 0, "Nothing to withdraw");
-
-        // Reset staker data.
-        st.stakedAmount = 0;
-        st.unstakingAmount = 0;
-        st.unclaimedRewards = 0;
-        st.unstakingStartTime = 0;
-        st.totalEarnedRewards = 0;
-        st.lastActivityTime = block.timestamp;
-
-        _removeStaker(msg.sender);
-
-        cloudToken.safeTransfer(msg.sender, totalAmount);
-        emit EmergencyWithdrawn(msg.sender, totalAmount, 0);
-    }
 
     // ============================================
     // INTERNAL FUNCTIONS
     // ============================================
 
-    // Recaching/updating of parameters
-    function _updateStakingParams       () internal {
 
-        require(address(cloudUtils) != address(0), "CloudUtils not set");
-        (
-            uint256 _minStakeAmount,
-            uint256 _cooldown,
-            uint256 _governanceInactivityThreshold,
-            uint256 _autoUnstakePeriod,
-            uint256 _aprMin,
-            uint256 _aprMax,
-            uint256 _stakedCircSupplyMin,
-            uint256 _stakedCircSupplyMax,
-            uint256 _cachingPeriod
-        ) = cloudUtils.getStakingParams();
+    function _authorizeUpgrade(address newImplementation)   internal override onlyOwner {}
 
-        minStakeAmount                  = _minStakeAmount;
-        cooldown                        = _cooldown;
-        autoUnstakePeriod               = _autoUnstakePeriod;
-        governanceInactivityThreshold   = _governanceInactivityThreshold;
-        aprMin                          = _aprMin;
-        aprMax                          = _aprMax;
-        stakedCircSupplyMin             = _stakedCircSupplyMin;
-        stakedCircSupplyMax             = _stakedCircSupplyMax;
-        cachingPeriod                   = _cachingPeriod;
-
-        lastParamsUpdate = block.timestamp;
-    }
-
-    // Automatically update staking parameters if the caching period has passed.
-    function _tryUpdateStakingParams    () internal {
-        if (block.timestamp >= lastParamsUpdate + cachingPeriod) {
-             _updateStakingParams();
-        }
-    }
-
-    // Adds a new staker to the tracking list if not already present.
-    function _addStaker                 (address stakerAddr) internal {
-        if (stakerIndex[stakerAddr] == 0) {
-            stakerList.push(stakerAddr);
-            stakerIndex[stakerAddr] = stakerList.length; // store index+1
-        }
-    }
-
-    // Placeholder for rewards update logic.
-    function _updateRewards             (address stakerAddr) internal {
-        // Future implementation: update staker’s unclaimedRewards based on APR, staking time, etc.
-    }
-
-    // Automatically unstakes a staker who has been inactive for 3 years.
-    function _autoUnstake               (address stakerAddr) internal {
-        Staker storage st = stakers[stakerAddr];
-        uint256 totalToReturn = st.stakedAmount + st.unclaimedRewards;
-        // Reset staker data.
-        st.stakedAmount = 0;
-        st.unstakingAmount = 0;
-        st.unclaimedRewards = 0;
-        st.unstakingStartTime = 0;
-        st.totalEarnedRewards = 0;
-        st.lastActivityTime = block.timestamp;
-        // Remove staker from the active list.
-        _removeStaker(stakerAddr);
-        // Transfer funds back to the staker.
-        if (totalToReturn > 0) {
-            cloudToken.safeTransfer(stakerAddr, totalToReturn);
-        }
-        emit Unstaked(stakerAddr, totalToReturn);
-    }
-
-    // Removes a staker from the tracking list.
-    function _removeStaker              (address stakerAddr) internal {
-        uint256 index = stakerIndex[stakerAddr];
-        if (index > 0) {
-            uint256 actualIndex = index - 1;
-            uint256 lastIndex = stakerList.length - 1;
-            if (actualIndex != lastIndex) {
-                address lastStaker = stakerList[lastIndex];
-                stakerList[actualIndex] = lastStaker;
-                stakerIndex[lastStaker] = index;
-            }
-            stakerList.pop();
-            stakerIndex[stakerAddr] = 0;
-        }
-    }
 
     // ============================================
     // VIEW FUNCTIONS
     // ============================================
 
-    // Returns whether all stakers have been processed and, if not, the last processed staker index.
-    function getAutoUnstakeProgress() external view returns (bool reachedEnd, uint256 lastIndex) {
-        return (lastProcessedStaker == 0, lastProcessedStaker);
+
+    function calculateRewards(address stakerAddr)              external view returns (uint256) {
+        Staker memory st = stakers[stakerAddr];
+
+        require(st.lastRewardClaimTime > 0,        "No rewards history");
+
+        uint256 timeElapsed  = block.timestamp - st.lastRewardClaimTime;
+        uint256 currentAprE2 = getAPR();
+        uint256 rewards      = (st.stakedAmount * currentAprE2 * timeElapsed) / (10000 * 365 days);
+
+        rewards              = (rewards + 5e8) / 1e9;
+        rewards              = rewards * 1e9;
+
+        return rewards;
     }
 
-    /// @notice Returns detailed staking info for a given staker.
-    function getStakerInfo          (address stakerAddr)
-        external
-        view
-        returns (
-            uint256 stakedAmount,
-            uint256 unstakingAmount,
-            uint256 unclaimedRewards,
-            uint256 unstakingStartTime,
-            uint256 claimableTimestamp,
-            uint256 totalEarnedRewards
-        )
-    {
-        Staker storage st = stakers[stakerAddr];
-        stakedAmount = st.stakedAmount;
-        unstakingAmount = st.unstakingAmount;
-        unclaimedRewards = st.unclaimedRewards;
-        unstakingStartTime = st.unstakingStartTime;
-        claimableTimestamp = st.unstakingStartTime + cooldown;
-        totalEarnedRewards = st.totalEarnedRewards;
-    }
+    function getAPR()                                          external view returns (uint256) {
+        uint256 circulatingSupply       = cloudUtils.getCirculatingSupply();
+        require(circulatingSupply > 0, "Circulating supply must be greater than zero");
 
-    /// @notice Returns the total number of stakers.
-    function getTotalStakers        () public view returns (uint256) {
-        return stakerList.length;
-    }
+        uint256 availableReward         = cloudRewardPool.getRewardBalance();
+        uint256 stakedRatioE18          = (totalStaked * 1e18) / circulatingSupply;
+        uint256 stakedCircSupplyMinE18  = stakedCircSupplyMin * 1e18;
+        uint256 stakedCircSupplyMaxE18  = stakedCircSupplyMax * 1e18;
+        uint256 aprMaxE18               = aprMax * 1e18;
 
-    /// @notice Returns the sum of active staked tokens across all stakers.
-    function getTotalStakedTokens   () public view returns (uint256 total) {
-        for (uint256 i = 0; i < stakerList.length; i++) {
-            total += stakers[stakerList[i]].stakedAmount;
+        // Normal APR
+        // Formula: APR = aprMax - max(0, min(1, (Staked Percentage - stakedCircSupplyMin) / (stakedCircSupplyMax - stakedCircSupplyMin)) × (aprMax-aprMin)
+
+        uint256 factorE18;
+        if        (stakedRatioE18 <= stakedCircSupplyMinE18) {
+            factorE18 = 0;
+        } else if (stakedRatioE18 >= stakedCircSupplyMaxE18) {
+            factorE18 = 1e18;
+        } else {
+            factorE18 = (stakedRatioE18 - stakedCircSupplyMinE18) * 1e18 / (stakedCircSupplyMaxE18 - stakedCircSupplyMinE18);
         }
-    }
+        uint256 aprE18 = aprMaxE18 - (factorE18 * (aprMax - aprMin));
+        uint256 aprE2  = aprE18 / 1e16; // converting from 1e18 to 1e2 format
 
-    /// @notice Returns the total staked tokens for tallying governance votes,
-    /// excluding stakers inactive for more than the governance threshold.
-    function getTotalStakedTokensForTally() public view returns (uint256 total) {
-        for (uint256 i = 0; i < stakerList.length; i++) {
-            Staker storage st = stakers[stakerList[i]];
-            if (block.timestamp < st.lastActivityTime + governanceInactivityThreshold) {
-                total += st.stakedAmount;
-            }
+
+        // Fallback APR
+        // Formula: APR  = (availableReward / totalStaked) × 100
+        if(totalStaked * aprE2 / 10000 > availableReward)
+        {
+            aprE18 = (totalStaked == 0) ? 0 : availableReward * 100 * 1e18 / totalStaked;
+            aprE2  = aprE18 / 1e16;
         }
-    }
 
-    /// @notice Provides paginated access to stakers and their staked amounts.
-    /// @param start The starting index.
-    /// @param count The number of stakers to retrieve.
-    function getAllStakers          (uint256 start, uint256 count) external view returns (address[] memory, uint256[] memory) {
-        uint256 end = start + count;
-        if (end > stakerList.length) {
-            end = stakerList.length;
-        }
-        uint256 actualCount = end - start;
-        address[] memory stakersOut = new address[](actualCount);
-        uint256[] memory amounts = new uint256[](actualCount);
-        for (uint256 i = 0; i < actualCount; i++) {
-            address stakerAddr = stakerList[start + i];
-            stakersOut[i] = stakerAddr;
-            amounts[i] = stakers[stakerAddr].stakedAmount;
-        }
-        return (stakersOut, amounts);
-    }
-
-    /// @notice Fetches staked amounts for a list of stakers.
-    /// @param stakersAddresses The addresses of stakers.
-    function getStakersData         (address[] memory stakersAddresses) external view returns (uint256[] memory) {
-        uint256[] memory amounts = new uint256[](stakersAddresses.length);
-        for (uint256 i = 0; i < stakersAddresses.length; i++) {
-            amounts[i] = stakers[stakersAddresses[i]].stakedAmount;
-        }
-        return amounts;
-    }
-
-    /// @notice Returns all staking-related parameters.
-    function getStakingParams       ()
-        external
-        view
-        returns (
-            uint256 _minStakeAmount,
-            uint256 _cooldown,
-            uint256 _autoUnstakePeriod,
-            uint256 _governanceInactivityThreshold,
-            uint256 _aprMin,
-            uint256 _aprMax,
-            uint256 _stakedCircSupplyMin,
-            uint256 _stakedCircSupplyMax
-        )
-    {
-        _minStakeAmount = minStakeAmount;
-        _cooldown = cooldown;
-        _autoUnstakePeriod = autoUnstakePeriod;
-        _governanceInactivityThreshold = governanceInactivityThreshold;
-        _aprMin = aprMin;
-        _aprMax = aprMax;
-        _stakedCircSupplyMin = stakedCircSupplyMin;
-        _stakedCircSupplyMax = stakedCircSupplyMax;
-    }
-
-    // Empty APR function; to be implemented with APR logic later.
-    function getAPR                 () public view returns (uint256) {
-        return 0;
+        return aprE2;
     }
 }

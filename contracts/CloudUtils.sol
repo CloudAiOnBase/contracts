@@ -13,21 +13,22 @@ contract CloudUtils is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     event ExclusionUpdated(address wallet, bool isExcluded);
 
     /// @custom:oz-upgrades-unsafe-allow constructor
-    constructor() {
-        _disableInitializers();
-    }
+    constructor() initializer {}
 
     function initialize(address _cloudToken) public initializer {
         require(_cloudToken != address(0), "Invalid token address");
+        
         __Ownable_init();
         __UUPSUpgradeable_init();
 
         cloudToken = IERC20(_cloudToken);
     }
 
+
     // ============================================
     // PUBLIC FUNCTIONS
     // ============================================
+
 
     function excludeFromCirculatingSupply(address _wallet, bool _status) external onlyOwner {
         require(_wallet != address(0), "Invalid address");
@@ -54,6 +55,7 @@ contract CloudUtils is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         }
     }
 
+
     // ============================================
     // INTERNAL FUNCTIONS
     // ============================================
@@ -66,7 +68,8 @@ contract CloudUtils is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     // VIEW FUNCTIONS
     // ============================================
 
-    function circulatingSupply() public view returns (uint256) {
+
+    function getCirculatingSupply() public view returns (uint256) {
         uint256 totalSupply = cloudToken.totalSupply();
         uint256 excludedBalance = 0;
 
