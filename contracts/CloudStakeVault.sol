@@ -73,7 +73,7 @@ contract CloudStakeVault is Ownable {
     }
 
     function emergencyWithdraw()                                    external {
-        require(userDeposits[msg.sender] > 0,                   "No stake to withdraw");
+        require(userDeposits[msg.sender] > 0,                   "No funds to withdraw");
         require(emergencyWithdrawRequests[msg.sender] == 0,     "Already requested");
 
         emergencyWithdrawRequests[msg.sender] = block.timestamp;
@@ -86,7 +86,7 @@ contract CloudStakeVault is Ownable {
         require(block.timestamp >= emergencyWithdrawRequests[msg.sender] + EMERGENCY_COOLDOWN,  "Emergency cooldown not finished");
 
         uint256 amount = userDeposits[msg.sender];
-        require(amount > 0, "No stake to withdraw");
+        require(amount > 0, "No fund to withdraw");
 
         userDeposits[msg.sender]                = 0;
         emergencyWithdrawRequests[msg.sender]   = 0;
@@ -111,7 +111,7 @@ contract CloudStakeVault is Ownable {
     // ============================================
 
 
-    function getStakedBalance(address user)                         external view returns (uint256) {
+    function getDepositedBalance(address user)                      external view returns (uint256) {
         return userDeposits[user];
     }
 
