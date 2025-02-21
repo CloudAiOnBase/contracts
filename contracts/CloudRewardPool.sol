@@ -86,6 +86,7 @@ contract CloudRewardPool is Ownable, ReentrancyGuard {
         require(lastActionTime > 0,                 "No action time");
 
         uint256 elapsedTime     = block.timestamp - lastActionTime;
+        // This computes the pro-rata reward based on time elapsed and the rugDetectionApr.
         uint256 entitledRewards = (totalStaked * elapsedTime * rugDetectionApr) / (365 days * 100);
         require(_rewardAmount <= entitledRewards,   "Requested amount exceeds entitled rewards"); // Ensure the requested reward amount does not exceed the rugDetectionApr
 

@@ -127,4 +127,21 @@ contract CloudStakeVault is Ownable, ReentrancyGuard {
         return userDeposits[user];
     }
 
+
+    function getEmergencyWithdrawalInfo(address user)
+        external
+        view
+        returns (
+            bool requested,
+            uint256 requestTime,
+            uint256 pendingAmount,
+            bool claimable
+        )
+    {
+        requestTime   = emergencyWithdrawRequests[user];
+        pendingAmount = emergencyWithdrawAmounts[user];
+        requested     = requestTime > 0;
+        claimable     = requested && (block.timestamp >= requestTime + EMERGENCY_COOLDOWN);
+    }
+
 }
