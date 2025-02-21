@@ -13,11 +13,12 @@ contract CloudStakeVault is Ownable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     IERC20 public immutable cloudToken;
-    address public cloudStakingContractAdress;
+    address public cloudStakingContract;
     uint256 public constant EMERGENCY_COOLDOWN = 30 days;
 
     mapping(address => uint256) private userDeposits;
     mapping(address => uint256) private emergencyWithdrawRequests;
+    mapping(address => uint256) private emergencyWithdrawAmounts;
 
     event StakingContractAddressUpdated     (address oldCloudStaking, address newCloudStaking);
     event Deposited                         (address indexed user, uint256 amount);
@@ -29,47 +30,48 @@ contract CloudStakeVault is Ownable, ReentrancyGuard {
         require(_cloudToken   != address(0),    "Invalid token address");
         require(_cloudStaking != address(0),    "Invalid staking address");
 
-        cloudToken                   = IERC20(_cloudToken);
-        cloudStakingContractAdress   = _cloudStaking;
+        cloudToken             = IERC20(_cloudToken);
+        cloudStakingContract   = _cloudStaking;
     }
 
     modifier onlyStakingContract() {
-        require(msg.sender == cloudStakingContractAdress, "Only CloudStaking can call this function");
+        require(msg.sender == cloudStakingContract, "Only CloudStaking can call this function");
         _;
     }
+
 
     // ============================================
     // PUBLIC FUNCTIONS
     // ============================================
 
     function setStakingContractAddress(address _newCloudStaking)                        external onlyOwner {
-        require(_newCloudStaking != address(0),                     "Invalid address");
-        require(_newCloudStaking != cloudStakingContractAdress,     "Same address already set");
+        require(_newCloudStaking != address(0),               "Invalid address");
+        require(_newCloudStaking != cloudStakingContract,     "Same address already set");
 
-        address oldCloudStaking               = cloudStakingContractAdress;
-        cloudStakingContractAdress            = _newCloudStaking;
+        address oldCloudStaking         = cloudStakingContract;
+        cloudStakingContract            = _newCloudStaking;
 
-        emit StakingContractAddressUpdated(oldCloudStaking, cloudStakingContractAdress);
+        emit StakingContractAddressUpdated(oldCloudStaking, cloudStakingContract);
     }
 
     function deposit(address user, uint256 amount)                                      external onlyStakingContract nonReentrant {
-        require(user != address(0), "Invalid user address");
-        require(amount > 0,         "Amount must be greater than zero");
+        require(user != address(0),                     "Invalid user address");
+        require(amount > 0,                             "Amount must be greater than zero");
+        require(emergencyWithdrawRequests[user] == 0,   "Cannot deposit during emergency withdrawal request");
 
         cloudToken.safeTransferFrom(user, address(this), amount);
 
         userDeposits[user]             += amount;
-        emergencyWithdrawRequests[user] = 0;
 
         emit Deposited(user, amount);
     }
 
     function withdraw(address user, uint256 amount)                                     external onlyStakingContract nonReentrant {
-        require(user != address(0),             "Invalid user address");
-        require(userDeposits[user] >= amount,   "Insufficient user balance");
+        require(user != address(0),                     "Invalid user address");
+        require(userDeposits[user] >= amount,           "Insufficient user balance");
+        require(emergencyWithdrawRequests[user] == 0,   "Cannot withdraw during emergency withdrawal request");
 
         userDeposits[user]             -= amount;
-        emergencyWithdrawRequests[user] = 0;
 
         cloudToken.safeTransfer(user, amount);
 
@@ -80,6 +82,8 @@ contract CloudStakeVault is Ownable, ReentrancyGuard {
         require(userDeposits[msg.sender] > 0,                   "No funds to withdraw");
         require(emergencyWithdrawRequests[msg.sender] == 0,     "Already requested");
 
+        emergencyWithdrawAmounts[msg.sender]  = userDeposits[msg.sender];
+        userDeposits[msg.sender]              = 0;
         emergencyWithdrawRequests[msg.sender] = block.timestamp;
 
         emit EmergencyWithdrawRequested(msg.sender, block.timestamp);
@@ -89,10 +93,10 @@ contract CloudStakeVault is Ownable, ReentrancyGuard {
         require(emergencyWithdrawRequests[msg.sender] > 0,                                      "No pending emergency withdrawal");
         require(block.timestamp >= emergencyWithdrawRequests[msg.sender] + EMERGENCY_COOLDOWN,  "Emergency cooldown not finished");
 
-        uint256 amount = userDeposits[msg.sender];
+        uint256 amount = emergencyWithdrawAmounts[msg.sender];
         require(amount > 0, "No fund to withdraw");
 
-        userDeposits[msg.sender]                = 0;
+        emergencyWithdrawAmounts[msg.sender]    = 0;
         emergencyWithdrawRequests[msg.sender]   = 0;
 
         cloudToken.safeTransfer(msg.sender, amount);
