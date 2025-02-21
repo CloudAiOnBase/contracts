@@ -110,6 +110,10 @@ contract CloudStakeVault is Ownable, ReentrancyGuard {
         IERC20(_token).safeTransfer(_recipient, _amount);
     }
 
+    receive()                                                                           external payable {
+        revert("Direct ETH transfers not allowed");
+    }
+
     fallback()                                                                          external payable {
         revert("ETH deposits not allowed");
     }
