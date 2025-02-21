@@ -9,6 +9,8 @@ import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
+
 
 interface ICloudStakeVault {
     function deposit            (address user, uint256 amount) external;
@@ -25,7 +27,7 @@ interface ICloudUtils {
 }
 
 
-contract StakingContract is Initializable, OwnableUpgradeable, UUPSUpgradeable {
+contract StakingContract is Initializable, OwnableUpgradeable, UUPSUpgradeable, ReentrancyGuardUpgradeable {
     using SafeERC20 for IERC20;
 
     IERC20              public immutable cloudToken;
@@ -85,6 +87,7 @@ contract StakingContract is Initializable, OwnableUpgradeable, UUPSUpgradeable {
 
         __Ownable_init();
         __UUPSUpgradeable_init();
+        __ReentrancyGuard_init();
 
         cloudToken          = IERC20(_cloudToken);
         cloudStakeVault     = ICloudStakeVault(_cloudStakeVault);
@@ -198,7 +201,7 @@ contract StakingContract is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         }
     }
 
-    function stake(uint256 amount)                                                      external notPaused {
+    function stake(uint256 amount)                                                      external notPaused nonReentrant {
         Staker storage st = stakers[msg.sender];
 
         require(tx.origin == msg.sender,                                            "Smart contracts cannot stake");
@@ -234,7 +237,7 @@ contract StakingContract is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         handleInactivity(maintenanceBatchSize);
     }
 
-    function claimRewards()                                                             external notPaused {
+    function claimRewards()                                                             external notPaused nonReentrant {
         _reactivateStaker(msg.sender);
 
         _claimRewards(msg.sender);
@@ -244,7 +247,7 @@ contract StakingContract is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         handleInactivity(maintenanceBatchSize); 
     }
 
-    function initiateUnstake(uint256 amount)                                            external notPaused {
+    function initiateUnstake(uint256 amount)                                            external notPaused nonReentrant {
         _reactivateStaker(msg.sender); // Reactivate staker if previously inactive
 
         _initiateUnstake(msg.sender, amount);
@@ -252,7 +255,7 @@ contract StakingContract is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         _updateLastActivity(msg.sender);
     }
 
-    function cancelUnstaking()                                                          external notPaused {
+    function cancelUnstaking()                                                          external notPaused nonReentrant {
         Staker storage st = stakers[msg.sender];
 
         require(st.unstakingAmount > 0,     "No unstaking in progress");
@@ -268,7 +271,7 @@ contract StakingContract is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         handleInactivity(maintenanceBatchSize);
     }
 
-    function claimUnstakedTokens()                                                      external notPaused {
+    function claimUnstakedTokens()                                                      external notPaused nonReentrant {
         Staker storage st = stakers[msg.sender];
 
         require(st.unstakingAmount > 0,                                 "No tokens in unstaking process");
@@ -289,7 +292,7 @@ contract StakingContract is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         _updateLastActivity(msg.sender);
     }
 
-    function handleInactivity(uint256 batchSize)                                        external notPaused {
+    function handleInactivity(uint256 batchSize)                                        external notPaused nonReentrant {
 
         if (batchSize == 0) return;
 
