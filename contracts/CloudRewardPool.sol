@@ -21,7 +21,7 @@ contract CloudRewardPool is Ownable, ReentrancyGuard {
     ICloudStakeVault public stakeVault;
     address public stakingContract;
     uint256 public rugDetectionApr;
-    mapping(address => uint256) public lastRewardClaimTime;
+    mapping(address => uint256) public lastRewardClaimTimes;
 
     event StakingContractUpdated    (address newStakingContract);
     event RewardsDistributed        (address indexed recipient, uint256 amount);
@@ -81,7 +81,7 @@ contract CloudRewardPool is Ownable, ReentrancyGuard {
         require(totalStaked > 0,                    "No tokens staked");
 
         uint256 lastDepositTime = stakingVault.getLastDepositTime(_recipient);
-        uint256 lastClaimTime   = lastRewardClaimTime[_recipient];
+        uint256 lastClaimTime   = lastRewardClaimTimes[_recipient];
         uint256 lastActionTime  = lastDepositTime > lastClaimTime ? lastDepositTime : lastClaimTime;  // Determine the last action time (either the last deposit or the last reward claim)
         require(lastActionTime > 0,                 "No action time");
 
@@ -89,7 +89,7 @@ contract CloudRewardPool is Ownable, ReentrancyGuard {
         uint256 entitledRewards = (totalStaked * elapsedTime * rugDetectionApr) / (365 days * 100);
         require(_rewardAmount <= entitledRewards,   "Requested amount exceeds entitled rewards"); // Ensure the requested reward amount does not exceed the rugDetectionApr
 
-        lastRewardClaimTime[_recipient] = block.timestamp;
+        lastRewardClaimTimes[_recipient] = block.timestamp;
 
         cloudToken.safeTransfer(_recipient, _rewardAmount);
 
