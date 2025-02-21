@@ -13,8 +13,9 @@ import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.
 
 
 interface ICloudStakeVault {
-    function deposit            (address user, uint256 amount) external;
-    function withdraw           (address user, uint256 amount) external;
+    function deposit            (address user, uint256 amount)  external;
+    function withdraw           (address user, uint256 amount)  external;
+    function getDepositedBalance(address _user)                 external view returns (uint256);
 }
 
 interface ICloudRewardPool {
@@ -202,18 +203,20 @@ contract StakingContract is Initializable, OwnableUpgradeable, UUPSUpgradeable, 
     }
 
     function stake(uint256 amount)                                                      external notPaused nonReentrant {
+        _syncStakerWithVault(msg.sender);
+
         Staker storage st = stakers[msg.sender];
 
         require(tx.origin == msg.sender,                                            "Smart contracts cannot stake");
         require(amount > 0,                                                         "Stake amount must be greater than zero");
         require(st.stakedAmount + st.unstakingAmount + amount >= minStakeAmount,    "Total stake below minimum required");
         require(cloudToken.allowance(msg.sender, address(this)) >= amount,          "Insufficient allowance");
-        
-        _reactivateStaker(msg.sender):
 
-        _claimRewards    (msg.sender);               // Claim any pending rewards before modifying the stake balance.
+        _reactivateStaker   (msg.sender);
 
-        _cancelUnstaking (msg.sender);
+        _claimRewards       (msg.sender);               // Claim any pending rewards before modifying the stake balance.
+
+        _cancelUnstaking    (msg.sender);
 
         if (stakerIndex[msg.sender] == 0) {     // Create/update staker
             stakerList.push(msg.sender);
@@ -238,24 +241,30 @@ contract StakingContract is Initializable, OwnableUpgradeable, UUPSUpgradeable, 
     }
 
     function claimRewards()                                                             external notPaused nonReentrant {
-        _reactivateStaker(msg.sender);
+        _syncStakerWithVault(msg.sender);
 
-        _claimRewards(msg.sender);
+        _reactivateStaker   (msg.sender);
 
-        _updateLastActivity(msg.sender);
+        _claimRewards       (msg.sender);
+
+        _updateLastActivity (msg.sender);
 
         handleInactivity(maintenanceBatchSize); 
     }
 
     function initiateUnstake(uint256 amount)                                            external notPaused nonReentrant {
-        _reactivateStaker(msg.sender); // Reactivate staker if previously inactive
+        _syncStakerWithVault(msg.sender);
 
-        _initiateUnstake(msg.sender, amount);
+        _reactivateStaker   (msg.sender); // Reactivate staker if previously inactive
 
-        _updateLastActivity(msg.sender);
+        _initiateUnstake    (msg.sender, amount);
+
+        _updateLastActivity (msg.sender);
     }
 
     function cancelUnstaking()                                                          external notPaused nonReentrant {
+        _syncStakerWithVault(msg.sender);
+
         Staker storage st = stakers[msg.sender];
 
         require(st.unstakingAmount > 0,     "No unstaking in progress");
@@ -272,6 +281,8 @@ contract StakingContract is Initializable, OwnableUpgradeable, UUPSUpgradeable, 
     }
 
     function claimUnstakedTokens()                                                      external notPaused nonReentrant {
+        _syncStakerWithVault(msg.sender);
+
         Staker storage st = stakers[msg.sender];
 
         require(st.unstakingAmount > 0,                                 "No tokens in unstaking process");
@@ -304,6 +315,9 @@ contract StakingContract is Initializable, OwnableUpgradeable, UUPSUpgradeable, 
         while (i < listLength && processedCount < batchSize) {
 
             address stakerAddr = stakerList[i];
+
+             _syncStakerWithVault(stakerAddr);
+
             Staker storage st  = stakers[stakerAddr];
 
             // ignore in tally
@@ -336,6 +350,28 @@ contract StakingContract is Initializable, OwnableUpgradeable, UUPSUpgradeable, 
     // ============================================
 
     function _authorizeUpgrade(address newImplementation)           internal override onlyOwner {}
+
+    function _syncStakerWithVault(address stakerAddr)               internal {
+        uint256 depositedBalance = cloudStakeVault.getDepositedBalance(stakerAddr);
+
+        Staker storage st = stakers[stakerAddr];
+
+        if (depositedBalance == 0 && st.stakedAmount > 0) {
+            uint256 amountWithdrawn = st.stakedAmount;
+
+            if (amountWithdrawn >= 1e18) {
+                totalStakers--;
+            }
+            totalStaked -= amountWithdrawn;
+            if (st.isActive) {
+                totalStakedForTally -= amountWithdrawn;
+            }
+
+            st.stakedAmount = 0;
+            st.unstakingAmount = 0;
+            st.unstakingStartTime = 0;
+        }
+    }
 
     function _initiateUnstake(address stakerAddr, uint256 amount)   internal {
         Staker storage st = stakers[stakerAddr];
