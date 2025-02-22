@@ -7,7 +7,7 @@ pragma solidity ^0.8.0;
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 contract CloudStakeVault is Ownable, ReentrancyGuard {
     using SafeERC20 for IERC20;
@@ -26,7 +26,7 @@ contract CloudStakeVault is Ownable, ReentrancyGuard {
     event EmergencyWithdrawRequested        (address indexed user, uint256 timestamp);
     event EmergencyWithdrawn                (address indexed user, uint256 amount);
 
-    constructor(address _cloudToken, address _cloudStaking) {
+    constructor(address _cloudToken, address _cloudStaking) Ownable(msg.sender) {
         require(_cloudToken   != address(0),    "Invalid token address");
         require(_cloudStaking != address(0),    "Invalid staking address");
 
@@ -37,6 +37,33 @@ contract CloudStakeVault is Ownable, ReentrancyGuard {
     modifier onlyStakingContract() {
         require(msg.sender == cloudStakingContract, "Only CloudStaking can call this function");
         _;
+    }
+
+
+    // ============================================
+    // VIEW FUNCTIONS
+    // ============================================
+
+
+    function getDepositedBalance(address user)                                          external view returns (uint256) {
+        return userDeposits[user];
+    }
+
+
+    function getEmergencyWithdrawalInfo(address user)
+        external
+        view
+        returns (
+            bool requested,
+            uint256 requestTime,
+            uint256 pendingAmount,
+            bool claimable
+        )
+    {
+        requestTime   = emergencyWithdrawRequests[user];
+        pendingAmount = emergencyWithdrawAmounts[user];
+        requested     = requestTime > 0;
+        claimable     = requested && (block.timestamp >= requestTime + EMERGENCY_COOLDOWN);
     }
 
 
@@ -118,30 +145,6 @@ contract CloudStakeVault is Ownable, ReentrancyGuard {
         revert("ETH deposits not allowed");
     }
 
-    // ============================================
-    // VIEW FUNCTIONS
-    // ============================================
 
-
-    function getDepositedBalance(address user)                                          external view returns (uint256) {
-        return userDeposits[user];
-    }
-
-
-    function getEmergencyWithdrawalInfo(address user)
-        external
-        view
-        returns (
-            bool requested,
-            uint256 requestTime,
-            uint256 pendingAmount,
-            bool claimable
-        )
-    {
-        requestTime   = emergencyWithdrawRequests[user];
-        pendingAmount = emergencyWithdrawAmounts[user];
-        requested     = requestTime > 0;
-        claimable     = requested && (block.timestamp >= requestTime + EMERGENCY_COOLDOWN);
-    }
 
 }

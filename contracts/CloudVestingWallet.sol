@@ -9,7 +9,7 @@ import "@openzeppelin/contracts/finance/VestingWallet.sol";
 contract CloudVestingWallet is VestingWallet {
     constructor(
         address beneficiaryAddress, 
-        uint256 startTimestamp, 
-        uint256 durationSeconds
+        uint64 startTimestamp, 
+        uint64 durationSeconds
     ) VestingWallet(beneficiaryAddress, startTimestamp, durationSeconds) {}
 }

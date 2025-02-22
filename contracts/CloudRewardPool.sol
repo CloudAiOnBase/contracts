@@ -7,7 +7,7 @@ pragma solidity ^0.8.0;
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol"; 
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 interface ICloudStakeVault {
     function getDepositedBalance(address _user)     external view returns (uint256);
@@ -28,16 +28,26 @@ contract CloudRewardPool is Ownable, ReentrancyGuard {
     event RewardsDeposited          (address indexed depositor, uint256 amount);
     event rugDetectionAprUpdated    (uint256 newRugDetectionApr);
 
-    constructor(address _cloudToken, address _stakingContract, address _stakingVault, uint256 _rugDetectionApr) {
+    constructor(address _cloudToken, address _stakingContract, address _stakeVault, uint256 _rugDetectionApr) Ownable(msg.sender) {
         require(_cloudToken      != address(0), "Invalid token address");
         require(_stakingContract != address(0), "Invalid staking contract address");
-        require(_stakingVault    != address(0), "Invalid staking vault address");
+        require(_stakeVault      != address(0), "Invalid stake vault address");
         require(_rugDetectionApr <= 100,        "APR limit must be smaller than 100");
 
         cloudToken      = IERC20(_cloudToken);
-        stakingVault    = ICloudStakeVault(_stakingVault);
+        stakeVault      = ICloudStakeVault(_stakeVault);
         stakingContract = _stakingContract;
         rugDetectionApr = _rugDetectionApr;
+    }
+
+
+    // ============================================
+    // VIEW FUNCTIONS
+    // ============================================
+
+
+    function getRewardBalance()                                                         external view returns (uint256) {
+        return cloudToken.balanceOf(address(this));
     }
 
 
@@ -77,10 +87,10 @@ contract CloudRewardPool is Ownable, ReentrancyGuard {
         require(msg.sender == stakingContract,                              "Only staking contract can withdraw");
         require(cloudToken.balanceOf(address(this)) >= _rewardAmount,       "Insufficient rewards");
 
-        uint256 totalStaked    = stakingVault.getDepositedBalance(_recipient);
+        uint256 totalStaked    = stakeVault.getDepositedBalance(_recipient);
         require(totalStaked > 0,                    "No tokens staked");
 
-        uint256 lastDepositTime = stakingVault.getLastDepositTime(_recipient);
+        uint256 lastDepositTime = stakeVault.getLastDepositTime(_recipient);
         uint256 lastClaimTime   = lastRewardClaimTimes[_recipient];
         uint256 lastActionTime  = lastDepositTime > lastClaimTime ? lastDepositTime : lastClaimTime;  // Determine the last action time (either the last deposit or the last reward claim)
         require(lastActionTime > 0,                 "No action time");
@@ -111,15 +121,6 @@ contract CloudRewardPool is Ownable, ReentrancyGuard {
         revert("ETH deposits not allowed");
     }
 
-
-    // ============================================
-    // VIEW FUNCTIONS
-    // ============================================
-
-
-    function getRewardBalance()                                                         external view returns (uint256) {
-        return cloudToken.balanceOf(address(this));
-    }
 
 }
 

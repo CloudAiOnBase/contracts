@@ -1,5 +1,6 @@
 require("@nomicfoundation/hardhat-toolbox");
 require("@openzeppelin/hardhat-upgrades"); 
+require("hardhat-contract-sizer");
 require("dotenv").config();
 
 module.exports = {
@@ -9,7 +10,7 @@ module.exports = {
       accounts: process.env.PRIVATE_KEY ? [`0x${process.env.PRIVATE_KEY}`] : [],
       chainId: 8453,
     },
-    baseSepolia: {  // ✅ Replace Base Goerli with Base Sepolia
+    baseSepolia: {
       url: process.env.BASE_SEPOLIA_RPC_URL || "https://sepolia.base.org",
       accounts: process.env.PRIVATE_KEY ? [`0x${process.env.PRIVATE_KEY}`] : [],
       chainId: 84532,
@@ -21,6 +22,17 @@ module.exports = {
       baseSepolia: process.env.BASESCAN_API_KEY || "", 
     },
   },
-  solidity: "0.8.20",
+  solidity: {
+    version: "0.8.22",  //  Ensure latest Solidity version
+    settings: {
+      optimizer: {
+        enabled: true,  
+        runs: 200,      // Adjust runs (lower values reduce size)
+      },
+    },
+  },
+  contractSizer: {
+    runOnCompile: true,  //  Automatically checks size when compiling
+    only: ["CloudStaking", "CloudVestingWallet", "CloudRewardPool", "CloudStakeVault", "CloudUtils"],  //  Change this to your contract name
+  },
 };
-
