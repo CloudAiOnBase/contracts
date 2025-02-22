@@ -23,7 +23,3 @@ main().catch((error) => {
     console.error(error);
     process.exit(1);
 });
-
-
-//npx hardhat run deploy/deployCloudVestingWallet.js --network base
-//npx hardhat verify --network base --contract contracts/CloudVestingWallet.sol:CloudVestingWallet 0x106c5343a89afbf7C92AC49E6EDcF60Bae9044d4 "0xeA63c473D43990e1b9f1bB4d6B22f375CF414fE6" "1770744922" "126144000"
