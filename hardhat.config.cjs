@@ -32,7 +32,7 @@ module.exports = {
     },
   },
   contractSizer: {
-    runOnCompile: true,  //  Automatically checks size when compiling
+    runOnCompile: false,  //  Automatically checks size when compiling
     only: ["CloudStaking", "CloudVestingWallet", "CloudRewardPool", "CloudStakeVault", "CloudUtils"],  //  Change this to your contract name
   },
 };
