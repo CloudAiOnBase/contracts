@@ -8,7 +8,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/security/Pausable.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
 
 contract CloudStakeVault is Ownable, ReentrancyGuard, Pausable {
     using SafeERC20 for IERC20;
@@ -88,8 +88,8 @@ contract CloudStakeVault is Ownable, ReentrancyGuard, Pausable {
 
     function deposit(address user, uint256 amount)                                      external onlyStakingContract whenNotPaused nonReentrant {
         require(user != address(0),                     "Invalid user address");
-        require(amount > 0,                             "Amount must be greater than zero");
         require(emergencyWithdrawRequests[user] == 0,   "Cannot deposit during emergency withdrawal request");
+        require(amount > 0,                             "Amount must be greater than zero");
 
         cloudToken.safeTransferFrom(user, address(this), amount);
 
@@ -101,8 +101,9 @@ contract CloudStakeVault is Ownable, ReentrancyGuard, Pausable {
 
     function withdraw(address user, uint256 amount)                                     external onlyStakingContract whenNotPaused nonReentrant {
         require(user != address(0),                     "Invalid user address");
-        require(userDeposits[user] >= amount,           "Insufficient user balance");
         require(emergencyWithdrawRequests[user] == 0,   "Cannot withdraw during emergency withdrawal request");
+        require(amount > 0,                             "Amount must be greater than zero");
+        require(userDeposits[user] >= amount,           "Insufficient user balance");
 
         userDeposits[user]             -= amount;
         if(userDeposits[user] == 0) {
@@ -116,8 +117,8 @@ contract CloudStakeVault is Ownable, ReentrancyGuard, Pausable {
     }
 
     function emergencyWithdraw()                                                        external {
-        require(userDeposits[msg.sender] > 0,                   "No funds to withdraw");
         require(emergencyWithdrawRequests[msg.sender] == 0,     "Already requested");
+        require(userDeposits[msg.sender] > 0,                   "No funds to withdraw");
 
         emergencyWithdrawAmounts[msg.sender]  = userDeposits[msg.sender];
         userDeposits[msg.sender]              = 0;
@@ -143,13 +144,6 @@ contract CloudStakeVault is Ownable, ReentrancyGuard, Pausable {
         emit EmergencyWithdrawn(msg.sender, amount);
     }
 
-    function recoverMistakenTokens(address _token, address _recipient, uint256 _amount) external onlyOwner {
-        require(_token != address(cloudToken),  "Cannot withdraw staking token");
-        require(_recipient != address(0),       "Invalid recipient address");
-
-        IERC20(_token).safeTransfer(_recipient, _amount);
-    }
-
     function pause()                                                                    external onlyOwner {
         _pause();
     }
@@ -158,6 +152,13 @@ contract CloudStakeVault is Ownable, ReentrancyGuard, Pausable {
         _unpause();
     }
 
+    function recoverMistakenTokens(address _token, address _recipient, uint256 _amount) external onlyOwner {
+        require(_token != address(cloudToken),  "Cannot withdraw staking token");
+        require(_recipient != address(0),       "Invalid recipient address");
+
+        IERC20(_token).safeTransfer(_recipient, _amount);
+    }
+    
     receive()                                                                           external payable {
         revert("Direct ETH transfers not allowed");
     }
