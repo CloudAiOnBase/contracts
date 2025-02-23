@@ -4,31 +4,42 @@ pragma solidity ^0.8.0;
 // Author: CloudAI Dev Team
 // Developed by @BullBoss5
 
+/*
+ * Developer Note - Potential Improvement:
+ *
+ * Currently, rewards are computed only at the moment of claim, using the instantaneous APR.
+ * An alternative approach would be to periodically update and account for rewards locally.
+ *
+ * By doing so, the contract could track the accrued rewards over time, effectively averaging the APR
+ * rather than applying a single rate at claim time. This might provide a fairer reward calculation,
+ * especially in scenarios where the APR fluctuates.
+ *
+ */
+
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
-
+import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
 
 interface ICloudStakeVault {
-    function deposit            (address user, uint256 amount)  external;
-    function withdraw           (address user, uint256 amount)  external;
-    function getDepositedBalance(address _user)                 external view returns (uint256);
+    function deposit             (address user, uint256 amount)  external;
+    function withdraw            (address user, uint256 amount)  external;
+    function getDepositedBalance (address user)                  external view returns (uint256);
 }
 
 interface ICloudRewardPool {
-    function distributeRewards  (address user, uint256 amount) external;
-    function getRewardBalance() external view returns (uint256);
+    function distributeRewards   (address user, uint256 amount)  external;
+    function getRewardBalance    ()                              external view returns (uint256);
 }
 
 interface ICloudUtils {
-    function getCirculatingSupply() external view returns (uint256);
+    function getCirculatingSupply()                              external view returns (uint256);
 }
 
-
-contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, ReentrancyGuardUpgradeable {
+contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, ReentrancyGuardUpgradeable, PausableUpgradeable {
     using SafeERC20 for IERC20;
 
     IERC20              public cloudToken;
@@ -36,7 +47,6 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
     ICloudRewardPool    public cloudRewardPool;
     ICloudUtils         public cloudUtils;
 
-    bool public isPaused;
     uint256 public totalStakers;
     uint256 public totalStaked;
     uint256 public totalStakedForTally;
@@ -75,6 +85,7 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
     event StakerReactivated         (address indexed staker, uint256 stakedAmount);
     event AutoUnstaked              (address indexed staker, uint256 amount);
     event handleInactivityProcessed (uint256 lastProcessedStaker);
+    event handleInactivityCompleted ();
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() initializer {}
@@ -89,16 +100,12 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
         __Ownable_init(msg.sender);
         __UUPSUpgradeable_init();
         __ReentrancyGuard_init();
+        __Pausable_init();
 
         cloudToken          = IERC20(_cloudToken);
         cloudStakeVault     = ICloudStakeVault(_cloudStakeVault);
         cloudRewardPool     = ICloudRewardPool(_cloudRewardPool);
         cloudUtils          = ICloudUtils(_cloudUtils);
-    }
-
-    modifier notPaused() {
-        require(!isPaused, "Operation not allowed while contract is paused");
-        _;
     }
 
     // Enum to represent each staking parameter.
@@ -111,7 +118,7 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
         AprMax,                       // 5
         StakedCircSupplyMin,          // 6
         StakedCircSupplyMax,          // 7
-        maintenanceBatchSize         // 8
+        maintenanceBatchSize          // 8
     }
 
 
@@ -119,18 +126,17 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
     // VIEW FUNCTIONS
     // ============================================
 
-    function getAprE2()                                        public view returns (uint256) {
-        uint256 circulatingSupply       = cloudUtils.getCirculatingSupply();
-        require(circulatingSupply > 0, "Circulating supply must be greater than zero");
 
-        uint256 availableReward         = cloudRewardPool.getRewardBalance();
-        uint256 stakedRatioE18          = (totalStaked * 1e18) / circulatingSupply;
+    function getAprE2()                                             public view returns (uint256) {
+        // Normal APR
         uint256 stakedCircSupplyMinE18  = stakedCircSupplyMin * 1e18;
         uint256 stakedCircSupplyMaxE18  = stakedCircSupplyMax * 1e18;
         uint256 aprMaxE18               = aprMax * 1e18;
 
-        // Normal APR
-        // Formula: APR = aprMax - max(0, min(1, (Staked Percentage - stakedCircSupplyMin) / (stakedCircSupplyMax - stakedCircSupplyMin)) × (aprMax-aprMin)
+        // -- Formula: APR = aprMax - max(0, min(1, (Staked Percentage - stakedCircSupplyMin) / (stakedCircSupplyMax - stakedCircSupplyMin)) × (aprMax-aprMin)
+        uint256 circulatingSupplyE18    = cloudUtils.getCirculatingSupply();
+        require(circulatingSupplyE18 > 0,     "Circulating supply must be greater than zero");
+        uint256 stakedRatioE18   = (totalStaked * 1e18) / circulatingSupplyE18;
 
         uint256 factorE18;
         if        (stakedRatioE18 <= stakedCircSupplyMinE18) {
@@ -143,24 +149,25 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
         uint256 aprE18 = aprMaxE18 - (factorE18 * (aprMax - aprMin));
         uint256 aprE2  = aprE18 / 1e16; // converting from 1e18 to 1e2 format
 
-
         // Fallback APR
-        // Formula: APR  = (availableReward / totalStaked) × 100
+        uint256 availableReward         = cloudRewardPool.getRewardBalance();
+
+        // -- Formula: APR  = (availableReward / totalStaked) × 100
         if(totalStaked * aprE2 / 10000 > availableReward)
         {
             aprE18 = (totalStaked == 0) ? 0 : availableReward * 100 * 1e18 / totalStaked;
             aprE2  = aprE18 / 1e16;
         }
 
-        if(aprE2 > 10000) aprE2 = 10000; // hard security in case a param is corrupted
+        if(aprE2 > 5000) aprE2 = 5000; // hard security in case a param is corrupted
  
         return aprE2;
     }
 
-    function calculateRewards(address stakerAddr)              public view returns (uint256) {
+    function calculateRewards(address stakerAddr)                   public view returns (uint256) {
         Staker memory st = stakers[stakerAddr];
 
-        require(st.lastRewardClaimTime > 0,        "No rewards history");
+        require(st.lastRewardClaimTime > 0,        "No rewards history"); // important safety
 
         uint256 timeElapsed  = block.timestamp - st.lastRewardClaimTime;
         uint256 currentAprE2 = getAprE2();
@@ -172,16 +179,15 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
         return rewards;
     }
 
-
-
-    function getStakerInfo(address stakerAddr)                 external view returns (
+    function getStakerInfo(address stakerAddr)                      external view returns (
             uint256 stakedAmount,
             uint256 lastRewardClaimTime,
             uint256 unstakingAmount,
             uint256 unstakingStartTime,
             uint256 claimableTimestamp,
             uint256 totalEarnedRewards,
-            uint256 lastActivityTime
+            uint256 lastActivityTime,
+            bool    isActive
         )
     {
         Staker storage st = stakers[stakerAddr];
@@ -193,9 +199,10 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
         claimableTimestamp  = st.unstakingStartTime + cooldown;
         totalEarnedRewards  = st.totalEarnedRewards;
         lastActivityTime    = st.lastActivityTime;
+        isActive            = st.isActive;
     }
 
-    function getStakingParams()                                external view returns (
+    function getStakingParams()                                     external view returns (
         uint256 _minStakeAmount,
         uint256 _cooldown,
         uint256 _governanceInactivityThreshold,
@@ -217,42 +224,40 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
         _maintenanceBatchSize           = maintenanceBatchSize;
     }
 
-    function getStakersData(address[] memory stakersAddresses) external view returns (uint256[] memory stakedAmounts, bool[] memory isActives)
-    {
-        uint256 length      = stakersAddresses.length;
+    function getStakersData(address[] memory stakerAddresses)      external view returns (uint256[] memory stakedAmounts, bool[] memory isActives) {
+        uint256 length      = stakerAddresses.length;
         stakedAmounts       = new uint256[](length);
         isActives           = new bool[](length);
 
         for (uint256 i = 0; i < length; i++) {
-            Staker storage st       = stakers[stakersAddresses[i]];
+            Staker storage st       = stakers[stakerAddresses[i]];
             stakedAmounts[i]        = st.stakedAmount;
             isActives[i]            = st.isActive;
         }
     }
 
-    function getAllStakers(uint256 start, uint256 count)        external view returns (address[] memory stakersOut, uint256[] memory amounts)
-    {
+    function getAllStakers(uint256 start, uint256 count)            external view returns (address[] memory stakerOuts, uint256[] memory amounts) {
         uint256 listLength = stakerList.length;
         if (start >= listLength) {
-            return (new address[](0), new uint256[](0)); //Return empty arrays if `start` is out of bounds
+            return (new address[](0), new uint256[](0)); //Return empty arrays if `start` is out of bound
         }
 
         uint256 end = start + count;
         if (end > listLength) {
-            end = listLength; // Prevent out-of-bounds access
+            end = listLength; // Prevent out-of-bound access
         }
 
         uint256 actualCount = end - start;
-        stakersOut          = new address[](actualCount);
+        stakerOuts          = new address[](actualCount);
         amounts             = new uint256[](actualCount);
 
         for (uint256 i = 0; i < actualCount; i++) {
             address stakerAddr  = stakerList[start + i];
-            stakersOut[i]       = stakerAddr;
+            stakerOuts[i]       = stakerAddr;
             amounts[i]          = stakers[stakerAddr].stakedAmount;
         }
 
-        return (stakersOut, amounts);
+        return (stakerOuts, amounts);
     }
 
     // ============================================
@@ -267,7 +272,7 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
 
         Staker storage st = stakers[stakerAddr];
 
-        if (depositedBalance == 0 && st.stakedAmount > 0) {
+        if (depositedBalance == 0 && st.stakedAmount > 0) { // i.e., an emergency withdrawal has been initiated or completed in the stake vault
             uint256 amountWithdrawn = st.stakedAmount;
 
             if (amountWithdrawn >= 1e18) {
@@ -292,12 +297,14 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
 
         _claimRewards(stakerAddr);  // Claim any pending rewards before modifying the stake balance.
 
-        st.stakedAmount         -= amount;
-        if(st.stakedAmount >= 1e18 && st.stakedAmount - amount < 1e18) totalStakers--;
+        uint256 previousStake = st.stakedAmount;
+
+        if(previousStake >= 1e18 && previousStake - amount < 1e18) totalStakers--;
         totalStaked             -= amount;
         if(st.isActive) {
             totalStakedForTally     -= amount;
         }
+        st.stakedAmount         -= amount;
         st.unstakingAmount      += amount;
         st.unstakingStartTime   = block.timestamp; // resets cooldown
 
@@ -309,21 +316,23 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
         Staker storage st = stakers[stakerAddr];
 
         if(st.unstakingAmount > 0) {
-            uint256 cancelled       = st.unstakingAmount;
+            uint256 previousStake = st.stakedAmount;
+            uint256 amount       = st.unstakingAmount;
 
-            st.stakedAmount        += cancelled;
-            totalStaked            += cancelled;
+            if(previousStake < 1e18 && previousStake + amount >= 1e18) totalStakers++;
+            totalStaked            += amount;
             if(st.isActive) {
-                totalStakedForTally     += cancelled;
+                totalStakedForTally     += amount;
             }
+            st.stakedAmount        += amount;
             st.unstakingAmount      = 0;
             st.unstakingStartTime   = 0;
 
-            emit UnstakeCancelled (stakerAddr, cancelled);
+            emit UnstakeCancelled (stakerAddr, amount);
         }    
     }
 
-    function _claimRewards(address stakerAddr)                      internal {
+    function _claimRewards(address stakerAddr)                      internal nonReentrant {
 
         Staker storage st = stakers[stakerAddr];
 
@@ -336,7 +345,7 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
         st.lastRewardClaimTime   = block.timestamp; // Update last reward claim time BEFORE external call, prevent double claiming before transfer
         st.totalEarnedRewards   += rewards;
         
-        cloudRewardPool.distributeRewards(stakerAddr, rewards); // Transfer rewards from the reward pool
+        cloudRewardPool.distributeRewards(stakerAddr, rewards);
 
         emit RewardsClaimed(stakerAddr, rewards);
     }
@@ -375,24 +384,13 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
     // ============================================
 
 
-    function pauseContract()                                                            external onlyOwner {
-        isPaused = true;
-    }
-
-    function unpauseContract()                                                          external onlyOwner {
-        isPaused = false;
-    }
-
     /**
      * @notice Updates one or more staking parameters based on the provided keys and values.
      * @param keys An array of keys representing the staking parameters to update.
      *             Each key is a uint8 corresponding to a value in the StakingParam enum.
      * @param values An array of new values for the corresponding parameters.
-     * Requirements:
-     * - `keys` and `values` arrays must have the same length.
-     * - Only the contract owner can call this function.
      */
-    function updateStakingParameters(uint8[] calldata keys, uint256[] calldata values)  external onlyOwner notPaused {
+    function updateStakingParameters(uint8[] calldata keys, uint256[] calldata values)  external onlyOwner whenNotPaused {
         // IMPORTANT: When updating multiple parameters in a single call, the order matters.
         // For example, if both aprMin and aprMax are being updated, ensure that either aprMin is updated before aprMax,
         // or that the final values satisfy the condition (aprMax >= aprMin). Otherwise, the validation check for aprMax may fail.
@@ -407,7 +405,7 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
             } else if (keys[i] == uint8(StakingParam.Cooldown)) {
                 require(values[i] > 0,                          "Cooldown must be positive");
                 require(values[i] % 1 days == 0,                "Cooldown must be in whole days");
-                require(values[i] <= 30,                        "Cooldown must be less than 30 days");
+                require(values[i] <= 30 days,                   "Cooldown must be less than 30 days");
 
                 cooldown = values[i];
 
@@ -443,21 +441,23 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
 
             } else if (keys[i] == uint8(StakingParam.StakedCircSupplyMax)) {
                 require(values[i] >  0,                         "stakedCircSupplyMax must be > 0");
-                require(values[i] > stakedCircSupplyMin,       "stakedCircSupplyMax must be > stakedCircSupplyMin");
+                require(values[i] > stakedCircSupplyMin,        "stakedCircSupplyMax must be > stakedCircSupplyMin");
                 require(values[i] <= 100,                       "stakedCircSupplyMax must be <= 100");
 
                 stakedCircSupplyMax = values[i];
 
             } else if (keys[i] == uint8(StakingParam.maintenanceBatchSize)) {
+                require(values[i] <= 100,                       "maintenanceBatchSize must be <= 100");
 
                 maintenanceBatchSize = values[i];
+
              } else {
                 revert("Invalid parameter key");
             }
         }
     }
 
-    function handleInactivity(uint256 batchSize)                                        public notPaused nonReentrant {
+    function handleInactivity(uint256 batchSize)                                        public whenNotPaused nonReentrant {
 
         if (batchSize == 0) return;
 
@@ -469,40 +469,48 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
         while (i < listLength && processedCount < batchSize) {
 
             address stakerAddr = stakerList[i];
-
-             _syncStakerWithVault(stakerAddr);
-
             Staker storage st  = stakers[stakerAddr];
 
-            // ignore in tally
-            if(st.isActive && currentTimestamp >= st.lastActivityTime + governanceInactivityThreshold) {
-                _deactivateStaker(stakerAddr);
-            }
+            // sync with vault in case of a direct emergency withdraw in the vault
+             _syncStakerWithVault(stakerAddr);
 
-            // auto unstake
-            if(st.stakedAmount > 0 && currentTimestamp >= st.lastActivityTime + autoUnstakePeriod) {
-                _initiateUnstake(stakerAddr, st.stakedAmount);
+            if(st.stakedAmount > 0)
+            {
+                // ignore in tally
+                if(st.isActive && currentTimestamp >= st.lastActivityTime + governanceInactivityThreshold) {
+                    _deactivateStaker(stakerAddr);
+                }
 
-                emit AutoUnstaked(stakerAddr, st.stakedAmount);
+                // auto unstake
+                if(currentTimestamp >= st.lastActivityTime + autoUnstakePeriod) {
+                    _initiateUnstake(stakerAddr, st.stakedAmount);
+
+                    emit AutoUnstaked(stakerAddr, st.stakedAmount);
+                }
             }
 
             i++;
             processedCount++;
         }
 
+        emit handleInactivityProcessed((i > 0) ? i - 1 : 0);
+
         lastProcessedStaker = (i >= listLength) ? 0 : i;
 
-        emit handleInactivityProcessed(lastProcessedStaker);
+        if (lastProcessedStaker == 0) {
+            emit handleInactivityCompleted();
+        }
     }
 
+    function stake(uint256 amount)                                                      external whenNotPaused nonReentrant {
 
-    function stake(uint256 amount)                                                      external notPaused nonReentrant {
+        require(tx.origin == msg.sender,                                            "Smart contracts cannot stake");
+        require(amount > 0,                                                         "Stake amount must be greater than zero");
+
         _syncStakerWithVault(msg.sender);
 
         Staker storage st = stakers[msg.sender];
 
-        require(tx.origin == msg.sender,                                            "Smart contracts cannot stake");
-        require(amount > 0,                                                         "Stake amount must be greater than zero");
         require(st.stakedAmount + st.unstakingAmount + amount >= minStakeAmount,    "Total stake below minimum required");
         require(cloudToken.allowance(msg.sender, address(this)) >= amount,          "Insufficient allowance");
 
@@ -515,14 +523,16 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
         if (stakerIndex[msg.sender] == 0) {     // Create/update staker
             stakerList.push(msg.sender);
             stakerIndex[msg.sender] = stakerList.length; // store index+1
-            st.lastRewardClaimTime  = block.timestamp;   // Initialize the lastRewardClaimTime for a new staker (better be completely safe)
+            st.lastRewardClaimTime  = block.timestamp;   // Initialize reward claim time (extra safety)
         }
 
-        if(st.stakedAmount < 1e18 && st.stakedAmount + amount >= 1e18) totalStakers++;
+        uint256 previousStake = st.stakedAmount;
+
+        if(previousStake < 1e18 && previousStake + amount >= 1e18) totalStakers++;
         totalStaked           += amount;
         totalStakedForTally   += amount;
         st.stakedAmount       += amount;
-        st.lastRewardClaimTime = block.timestamp;   // they start accruing rewards from now rather than from an old timestamp (case: for old stakers that restake from 0)
+        st.lastRewardClaimTime = block.timestamp;   // Start accruing rewards from now (edge case: old staker that restakes from 0)
 
         cloudStakeVault.deposit(msg.sender, amount);
 
@@ -530,11 +540,9 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
         emit StakerData (msg.sender, st.stakedAmount);
 
         _updateLastActivity(msg.sender);
-
-        handleInactivity(maintenanceBatchSize);
     }
 
-    function claimRewards()                                                             external notPaused nonReentrant {
+    function claimRewards()                                                             external whenNotPaused nonReentrant {
         _syncStakerWithVault(msg.sender);
 
         _reactivateStaker   (msg.sender);
@@ -546,7 +554,7 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
         handleInactivity(maintenanceBatchSize); 
     }
 
-    function initiateUnstake(uint256 amount)                                            external notPaused nonReentrant {
+    function initiateUnstake(uint256 amount)                                            external whenNotPaused nonReentrant {
         _syncStakerWithVault(msg.sender);
 
         _reactivateStaker   (msg.sender); // Reactivate staker if previously inactive
@@ -554,27 +562,29 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
         _initiateUnstake    (msg.sender, amount);
 
         _updateLastActivity (msg.sender);
+
+        handleInactivity(maintenanceBatchSize); 
     }
 
-    function cancelUnstaking()                                                          external notPaused nonReentrant {
+    function cancelUnstaking()                                                          external whenNotPaused nonReentrant {
         _syncStakerWithVault(msg.sender);
 
         Staker storage st = stakers[msg.sender];
 
         require(st.unstakingAmount > 0,     "No unstaking in progress");
 
-        _reactivateStaker(msg.sender); 
+        _reactivateStaker   (msg.sender); 
 
-        _claimRewards(msg.sender);      // Claim any pending rewards before modifying the stake balance.
+        _claimRewards       (msg.sender);      // Claim any pending rewards before modifying the stake balance.
 
-        _cancelUnstaking(msg.sender);
+        _cancelUnstaking    (msg.sender);
 
-        _updateLastActivity(msg.sender);
+        _updateLastActivity (msg.sender);
 
-        handleInactivity(maintenanceBatchSize);
+        handleInactivity    (maintenanceBatchSize);
     }
 
-    function claimUnstakedTokens()                                                      external notPaused nonReentrant {
+    function claimUnstakedTokens()                                                      external whenNotPaused nonReentrant {
         _syncStakerWithVault(msg.sender);
 
         Staker storage st = stakers[msg.sender];
@@ -597,10 +607,19 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
         _updateLastActivity(msg.sender);
     }
 
-    function rescueTokens(address token, uint256 amount)                                external onlyOwner {
-       IERC20(token).safeTransfer(owner(), amount);
+    function recoverMistakenTokens      (address _token, address _recipient, uint256 _amount)   external onlyOwner {
+        require(_recipient != address(0),       "Invalid recipient address");
+
+        IERC20(_token).safeTransfer(_recipient, _amount);
     }
 
+    function pause()                                                                    external onlyOwner {
+        _pause();
+    }
+
+    function unpause()                                                                  external onlyOwner {
+        _unpause();
+    }
 
     // storage gap for upgrade safety, prevents storage conflicts in future versions
     uint256[50] private __gap;

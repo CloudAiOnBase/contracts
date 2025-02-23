@@ -8,15 +8,17 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/security/Pausable.sol";
 
-contract CloudStakeVault is Ownable, ReentrancyGuard {
+contract CloudStakeVault is Ownable, ReentrancyGuard, Pausable {
     using SafeERC20 for IERC20;
 
     IERC20 public immutable cloudToken;
-    address public cloudStakingContract;
+    address public cloudStaking;
     uint256 public constant EMERGENCY_COOLDOWN = 30 days;
 
     mapping(address => uint256) private userDeposits;
+    mapping(address => uint256) private lastDepositTimes;
     mapping(address => uint256) private emergencyWithdrawRequests;
     mapping(address => uint256) private emergencyWithdrawAmounts;
 
@@ -31,11 +33,11 @@ contract CloudStakeVault is Ownable, ReentrancyGuard {
         require(_cloudStaking != address(0),    "Invalid staking address");
 
         cloudToken             = IERC20(_cloudToken);
-        cloudStakingContract   = _cloudStaking;
+        cloudStaking           = _cloudStaking;
     }
 
     modifier onlyStakingContract() {
-        require(msg.sender == cloudStakingContract, "Only CloudStaking can call this function");
+        require(msg.sender == cloudStaking, "Only CloudStaking can call this function");
         _;
     }
 
@@ -49,6 +51,9 @@ contract CloudStakeVault is Ownable, ReentrancyGuard {
         return userDeposits[user];
     }
 
+    function getLastDepositTime(address user)                                           external view returns (uint256) {
+        return lastDepositTimes[user];
+    }
 
     function getEmergencyWithdrawalInfo(address user)
         external
@@ -73,32 +78,37 @@ contract CloudStakeVault is Ownable, ReentrancyGuard {
 
     function setStakingContractAddress(address _newCloudStaking)                        external onlyOwner {
         require(_newCloudStaking != address(0),               "Invalid address");
-        require(_newCloudStaking != cloudStakingContract,     "Same address already set");
+        require(_newCloudStaking != cloudStaking,             "Same address already set");
 
-        address oldCloudStaking         = cloudStakingContract;
-        cloudStakingContract            = _newCloudStaking;
+        address oldCloudStaking         = cloudStaking;
+        cloudStaking                    = _newCloudStaking;
 
-        emit StakingContractAddressUpdated(oldCloudStaking, cloudStakingContract);
+        emit StakingContractAddressUpdated(oldCloudStaking, cloudStaking);
     }
 
-    function deposit(address user, uint256 amount)                                      external onlyStakingContract nonReentrant {
+    function deposit(address user, uint256 amount)                                      external onlyStakingContract whenNotPaused nonReentrant {
         require(user != address(0),                     "Invalid user address");
         require(amount > 0,                             "Amount must be greater than zero");
         require(emergencyWithdrawRequests[user] == 0,   "Cannot deposit during emergency withdrawal request");
 
         cloudToken.safeTransferFrom(user, address(this), amount);
 
-        userDeposits[user]             += amount;
+        userDeposits[user]        += amount;
+        lastDepositTimes[user]     = block.timestamp;
 
         emit Deposited(user, amount);
     }
 
-    function withdraw(address user, uint256 amount)                                     external onlyStakingContract nonReentrant {
+    function withdraw(address user, uint256 amount)                                     external onlyStakingContract whenNotPaused nonReentrant {
         require(user != address(0),                     "Invalid user address");
         require(userDeposits[user] >= amount,           "Insufficient user balance");
         require(emergencyWithdrawRequests[user] == 0,   "Cannot withdraw during emergency withdrawal request");
 
         userDeposits[user]             -= amount;
+        if(userDeposits[user] == 0) {
+            delete userDeposits[user];
+            delete lastDepositTimes[user];
+        }
 
         cloudToken.safeTransfer(user, amount);
 
@@ -123,8 +133,10 @@ contract CloudStakeVault is Ownable, ReentrancyGuard {
         uint256 amount = emergencyWithdrawAmounts[msg.sender];
         require(amount > 0, "No fund to withdraw");
 
-        emergencyWithdrawAmounts[msg.sender]    = 0;
-        emergencyWithdrawRequests[msg.sender]   = 0;
+        delete emergencyWithdrawAmounts[msg.sender];
+        delete emergencyWithdrawRequests[msg.sender];
+        delete userDeposits[msg.sender];
+        delete lastDepositTimes[msg.sender];
 
         cloudToken.safeTransfer(msg.sender, amount);
 
@@ -132,9 +144,18 @@ contract CloudStakeVault is Ownable, ReentrancyGuard {
     }
 
     function recoverMistakenTokens(address _token, address _recipient, uint256 _amount) external onlyOwner {
-        require(_token != address(cloudToken), "Cannot withdraw staking token");
+        require(_token != address(cloudToken),  "Cannot withdraw staking token");
+        require(_recipient != address(0),       "Invalid recipient address");
 
         IERC20(_token).safeTransfer(_recipient, _amount);
+    }
+
+    function pause()                                                                    external onlyOwner {
+        _pause();
+    }
+
+    function unpause()                                                                  external onlyOwner {
+        _unpause();
     }
 
     receive()                                                                           external payable {
@@ -144,7 +165,4 @@ contract CloudStakeVault is Ownable, ReentrancyGuard {
     fallback()                                                                          external payable {
         revert("ETH deposits not allowed");
     }
-
-
-
 }
