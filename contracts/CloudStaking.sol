@@ -60,7 +60,7 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
     uint256 private stakedCircSupplyMax;
     uint256 private maintenanceBatchSize;
     uint256 public lastProcessedStaker;
-    bool public forceFailTest; // Control success/failure
+    uint256 public forceFailTest; // Control success/failure
 
     struct Staker {
         uint256 stakedAmount;
@@ -498,7 +498,11 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
 
     function handleInactivityOne(address stakerAddr)                                    public whenNotPaused nonReentrant {
 
-        if(forceFailTest) return;
+        if (forceFailTest == 1) {
+            return;
+        } else if (forceFailTest == 2) {
+            revert("ForceFailTest: Intentional failure");
+        }
 
         _handleInactivityOne(stakerAddr);
     }
@@ -626,7 +630,7 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
         _unpause();
     }
 
-    function setForceFailTest(bool _fail)                                               external onlyOwner{
+    function setForceFailTest(uint256 _fail)                                            external onlyOwner{
         forceFailTest = _fail;
     }
 

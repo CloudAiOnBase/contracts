@@ -202,6 +202,7 @@ describe("CloudStakeVault", function () {
 
       await wait(10);
 
+      await cloudStaking.setForceFailTest(2); // intentional failure, worst case scenario
       await expect(cloudStakeVault.connect(user).emergencyWithdraw()).to.be.revertedWith("Already requested");
       console.log(`✅ [${userLabel}] Emergency withdrawal requested`);
 
@@ -216,7 +217,6 @@ describe("CloudStakeVault", function () {
       await expect(cloudStakeVault.connect(user).claimEmergencyWithdraw()).to.be.revertedWith("Emergency cooldown not finished");
       //console.log(`✅ [${userLabel}] cannot claim emergency withdrawal yet`);
   }
-
 
   describe("Complete process", function () {
     it("", async function () {

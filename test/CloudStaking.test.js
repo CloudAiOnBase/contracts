@@ -480,7 +480,7 @@ describe("CloudStaking", function () {
       //staker = await cloudStaking.stakers(user1.getAddress());
       //console.log(staker);
 
-      await cloudStaking.setForceFailTest(true);
+      await cloudStaking.setForceFailTest(1);
 
       await cloudStakeVault.connect(user1).emergencyWithdraw();
 
@@ -528,7 +528,7 @@ describe("CloudStaking", function () {
       await ethers.provider.send("evm_increaseTime", [10 * 86400]);
       await ethers.provider.send("evm_mine");
 
-      await cloudStaking.setForceFailTest(true);
+      await cloudStaking.setForceFailTest(1);
 
       await cloudStakeVault.connect(user1).emergencyWithdraw();
 
@@ -583,7 +583,7 @@ describe("CloudStaking", function () {
       await ethers.provider.send("evm_increaseTime", [1 * 86400]);
       await ethers.provider.send("evm_mine");
 
-      await cloudStaking.setForceFailTest(true);
+      await cloudStaking.setForceFailTest(1);
 
       await cloudStakeVault.connect(user1).emergencyWithdraw();
 
@@ -629,7 +629,7 @@ describe("CloudStaking", function () {
       await ethers.provider.send("evm_increaseTime", [10 * 86400]);
       await ethers.provider.send("evm_mine");
 
-      await cloudStaking.setForceFailTest(true);
+      await cloudStaking.setForceFailTest(1);
 
       await cloudStakeVault.connect(user1).emergencyWithdraw();
 
