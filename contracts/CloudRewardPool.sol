@@ -12,7 +12,7 @@ import "@openzeppelin/contracts/utils/Pausable.sol";
 
 interface ICloudStakeVault {
     function getDepositedBalance(address _user)     external view returns (uint256);
-    function getLastDepositTime(address _user)      external view returns (uint256);
+    function getLastActivityTime(address _user)      external view returns (uint256);
 }
 
 contract CloudRewardPool is Ownable, ReentrancyGuard, Pausable {
@@ -62,9 +62,9 @@ contract CloudRewardPool is Ownable, ReentrancyGuard, Pausable {
         uint256 totalStaked = cloudStakeVault.getDepositedBalance(_recipient);
         require(totalStaked > 0, "No tokens staked");
 
-        uint256 lastDepositTime = cloudStakeVault.getLastDepositTime(_recipient);
+        uint256 lastActivityTime = cloudStakeVault.getLastActivityTime(_recipient);
         uint256 lastClaimTime   = lastRewardClaimTimes[_recipient];
-        uint256 lastActionTime  = lastDepositTime > lastClaimTime ? lastDepositTime : lastClaimTime; // Determine the last action time (either the last deposit or the last reward claim)
+        uint256 lastActionTime  = lastActivityTime > lastClaimTime ? lastActivityTime : lastClaimTime; // Determine the last action time (either the last deposit or the last reward claim)
         require(lastActionTime > 0, "No action time");
 
         uint256 elapsedTime = block.timestamp - lastActionTime;
@@ -77,7 +77,7 @@ contract CloudRewardPool is Ownable, ReentrancyGuard, Pausable {
     // ============================================
 
 
-    function setStakingContract         (address _newCloudStaking)                             external onlyOwner {
+    function setStakingContract         (address _newCloudStaking)                              external onlyOwner {
         require(_newCloudStaking != address(0),     "Invalid staking contract address");
 
         cloudStaking = _newCloudStaking;
@@ -94,7 +94,7 @@ contract CloudRewardPool is Ownable, ReentrancyGuard, Pausable {
     }
 
     function setRugDetectionApr         (uint256 _newRugDetectionApr)                           external onlyOwner {
-        require(_newRugDetectionApr <= 100,      "APR must not exceed 100");
+        require(_newRugDetectionApr <= 50,      "APR must not exceed 50");
 
         rugDetectionApr = _newRugDetectionApr;
 

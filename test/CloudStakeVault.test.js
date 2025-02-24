@@ -33,6 +33,47 @@ describe("CloudStakeVault", function () {
     cloudStaking.getAddress()
   });
 
+  describe("Administrative functions", function () {
+      it("Should allow owner to pause and unpause", async function () {
+        await cloudToken.connect(user).approve(cloudStakeVault.getAddress(), depositAmount);
+
+        await cloudStakeVault.connect(owner).pause();
+        await expect(cloudStakeVault.connect(cloudStaking).deposit(user.getAddress(), depositAmount)).to.be.reverted;
+
+        await cloudStakeVault.connect(owner).unpause();
+        await expect(cloudStakeVault.connect(cloudStaking).deposit(user.getAddress(), depositAmount)).to.emit(cloudStakeVault, "Deposited");
+
+        await expect(cloudStakeVault.connect(user).pause()).to.be.reverted;
+
+      });
+
+      it("Should allow owner to recover mistaken tokens", async function () {
+        const OtherToken = await ethers.getContractFactory("CloudToken");
+        otherToken       = await OtherToken.deploy();
+        await otherToken.waitForDeployment();
+
+        await otherToken.transfer(cloudStakeVault.getAddress(), depositAmount);
+        await expect(cloudStakeVault.connect(owner).recoverMistakenTokens(otherToken.getAddress(), owner.getAddress(), depositAmount)).to.not.be.reverted;
+
+        expect(await otherToken.balanceOf(owner.getAddress())).to.equal(initialSupply);
+      });
+
+      it("Should not allow recovery of staking token", async function () {
+        await expect(cloudStakeVault.connect(owner).recoverMistakenTokens(cloudToken.getAddress(), owner.getAddress(), depositAmount)).to.be.revertedWith("Cannot withdraw staking token");
+      });
+
+      it("Should allow owner to update the staking contract address", async function () {
+          const newAddress = await newCloudStaking.getAddress();
+          await expect(cloudStakeVault.connect(owner).setStakingContractAddress(newAddress)).to.emit(cloudStakeVault, "StakingContractAddressUpdated");
+          expect(await cloudStakeVault.cloudStaking()).to.equal(newAddress);
+      });
+
+      it("Should revert if a non-owner tries to update the staking contract address", async function () {
+          const newAddress = await newCloudStaking.getAddress();
+          await expect(cloudStakeVault.connect(user).setStakingContractAddress(newAddress)).to.be.reverted;
+      });
+    });
+
 
   async function wait(seconds) {
       await ethers.provider.send("evm_increaseTime", [seconds]);
@@ -57,8 +98,8 @@ describe("CloudStakeVault", function () {
       // Check last deposit time
       let receipt = await tx.wait();
       let blockTimestamp = (await ethers.provider.getBlock(receipt.blockNumber)).timestamp;
-      expect(await cloudStakeVault.getLastDepositTime(user.getAddress())).to.equal(blockTimestamp);
-      //console.log(`✅ [${userLabel}] lastDepositTime correctly updated`);
+      expect(await cloudStakeVault.getLastActivityTime(user.getAddress())).to.equal(blockTimestamp);
+      //console.log(`✅ [${userLabel}] lastActivityTime correctly updated`);
 
       vaultBalance = await cloudToken.balanceOf(cloudStakeVault.getAddress());
       userBalance = await cloudStakeVault.getDepositedBalance(user.getAddress());
@@ -69,10 +110,10 @@ describe("CloudStakeVault", function () {
   async function withdrawThroughStaking(user, amount, userLabel = "User") {
       let vaultBalance = await cloudToken.balanceOf(cloudStakeVault.getAddress());
       let userBalance = await cloudStakeVault.getDepositedBalance(user.getAddress());
-      let lastDepositTime = await cloudStakeVault.getLastDepositTime(user.getAddress());
 
       // Perform withdrawal via staking contract
-      await expect(cloudStakeVault.connect(cloudStaking).withdraw(user.getAddress(), amount)).to.emit(cloudStakeVault, "Withdrawn").withArgs(user.getAddress(), amount);
+      let tx = await cloudStakeVault.connect(cloudStaking).withdraw(user.getAddress(), amount);
+      await expect(tx).to.emit(cloudStakeVault, "Withdrawn").withArgs(user.getAddress(), amount);
       console.log(`✅ [${userLabel}] Successful withdrawal of ${ethers.formatEther(amount)} through the staking contract`);
 
       // Verify updated balances
@@ -80,11 +121,13 @@ describe("CloudStakeVault", function () {
       expect(await cloudStakeVault.getDepositedBalance(user.getAddress())).to.equal(userBalance - amount);
       //console.log(`✅ [${userLabel}] getDepositedBalance correct, vault balance correct`);
 
-      // Ensure lastDepositTime remains unchanged
+      // Ensure lastActivityTime remains unchanged
+      let receipt = await tx.wait();
+      let blockTimestamp = (await ethers.provider.getBlock(receipt.blockNumber)).timestamp;
       userBalance = await cloudStakeVault.getDepositedBalance(user.getAddress());
-      if(userBalance > 0) expect(await cloudStakeVault.getLastDepositTime(user.getAddress())).to.equal(lastDepositTime);
-      else expect(await cloudStakeVault.getLastDepositTime(user.getAddress())).to.equal(0);
-      //console.log(`✅ [${userLabel}] lastDepositTime still correct`);
+      if(userBalance > 0) expect(await cloudStakeVault.getLastActivityTime(user.getAddress())).to.equal(blockTimestamp);
+      else expect(await cloudStakeVault.getLastActivityTime(user.getAddress())).to.equal(0);
+      //console.log(`✅ [${userLabel}] lastActivityTime still correct`);
 
      vaultBalance = await cloudToken.balanceOf(cloudStakeVault.getAddress());
       userBalance = await cloudStakeVault.getDepositedBalance(user.getAddress());
@@ -163,8 +206,8 @@ describe("CloudStakeVault", function () {
           await expect(cloudStakeVault.connect(user).deposit(user.getAddress(), depositAmount2)).to.be.revertedWith("Only CloudStaking can call this function");
           console.log("✅ Direct user deposit rejected");  
 
-          expect(await cloudStakeVault.getLastDepositTime(user.getAddress())).to.equal(0);
-          console.log("✅ lastDepositTime = 0");  
+          expect(await cloudStakeVault.getLastActivityTime(user.getAddress())).to.equal(0);
+          console.log("✅ lastActivityTime = 0");  
 
           await wait(10);
 
@@ -218,7 +261,6 @@ describe("CloudStakeVault", function () {
 
           await cloudToken.connect(other2).approve(cloudStakeVault.getAddress(), depositAmount);
           await depositThroughStaking(other2, depositAmount, "User 3");
-          lastDepositTime3 = await cloudStakeVault.getLastDepositTime(other2.getAddress());
 
           await wait(10);
 
@@ -278,45 +320,6 @@ describe("CloudStakeVault", function () {
 
   });
 
-  describe("Administrative functions", function () {
-    it("allow owner to pause and unpause", async function () {
-      await cloudToken.connect(user).approve(cloudStakeVault.getAddress(), depositAmount);
-
-      await cloudStakeVault.connect(owner).pause();
-      await expect(cloudStakeVault.connect(cloudStaking).deposit(user.getAddress(), depositAmount)).to.be.reverted;
-
-      await cloudStakeVault.connect(owner).unpause();
-      await expect(cloudStakeVault.connect(cloudStaking).deposit(user.getAddress(), depositAmount)).to.emit(cloudStakeVault, "Deposited");
-
-      await expect(cloudStakeVault.connect(user).pause()).to.be.reverted;
-
-    });
-
-    it("Should allow owner to recover mistaken tokens", async function () {
-      const OtherToken = await ethers.getContractFactory("CloudToken");
-      otherToken       = await OtherToken.deploy();
-      await otherToken.waitForDeployment();
-
-      await otherToken.transfer(cloudStakeVault.getAddress(), depositAmount);
-      await expect(cloudStakeVault.connect(owner).recoverMistakenTokens(otherToken.getAddress(), owner.getAddress(), depositAmount)).to.not.be.reverted;
-
-      expect(await otherToken.balanceOf(owner.getAddress())).to.equal(initialSupply);
-    });
-
-    it("Should not allow recovery of staking token", async function () {
-      await expect(cloudStakeVault.connect(owner).recoverMistakenTokens(cloudToken.getAddress(), owner.getAddress(), depositAmount)).to.be.revertedWith("Cannot withdraw staking token");
-    });
-
-    it("Should allow owner to update the staking contract address", async function () {
-        const newAddress = await newCloudStaking.getAddress();
-        await expect(cloudStakeVault.connect(owner).setStakingContractAddress(newAddress)).to.emit(cloudStakeVault, "StakingContractAddressUpdated");
-        expect(await cloudStakeVault.cloudStaking()).to.equal(newAddress);
-    });
-
-    it("Should revert if a non-owner tries to update the staking contract address", async function () {
-        const newAddress = await newCloudStaking.getAddress();
-        await expect(cloudStakeVault.connect(user).setStakingContractAddress(newAddress)).to.be.reverted;
-    });
-  });
+  
 });
 

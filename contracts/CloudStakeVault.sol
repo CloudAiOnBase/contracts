@@ -18,7 +18,7 @@ contract CloudStakeVault is Ownable, ReentrancyGuard, Pausable {
     uint256 public constant EMERGENCY_COOLDOWN = 30 days;
 
     mapping(address => uint256) private userDeposits;
-    mapping(address => uint256) private lastDepositTimes;
+    mapping(address => uint256) private lastActivityTimes;
     mapping(address => uint256) private emergencyWithdrawRequests;
     mapping(address => uint256) private emergencyWithdrawAmounts;
 
@@ -51,8 +51,8 @@ contract CloudStakeVault is Ownable, ReentrancyGuard, Pausable {
         return userDeposits[user];
     }
 
-    function getLastDepositTime(address user)                                           external view returns (uint256) {
-        return lastDepositTimes[user];
+    function getLastActivityTime(address user)                                           external view returns (uint256) {
+        return lastActivityTimes[user];
     }
 
     function getEmergencyWithdrawalInfo(address user)
@@ -94,7 +94,7 @@ contract CloudStakeVault is Ownable, ReentrancyGuard, Pausable {
         cloudToken.safeTransferFrom(user, address(this), amount);
 
         userDeposits[user]        += amount;
-        lastDepositTimes[user]     = block.timestamp;
+        lastActivityTimes[user]     = block.timestamp;
 
         emit Deposited(user, amount);
     }
@@ -105,10 +105,11 @@ contract CloudStakeVault is Ownable, ReentrancyGuard, Pausable {
         require(amount > 0,                             "Amount must be greater than zero");
         require(userDeposits[user] >= amount,           "Insufficient user balance");
 
-        userDeposits[user]             -= amount;
+        userDeposits[user]        -= amount;
+        lastActivityTimes[user]     = block.timestamp;
         if(userDeposits[user] == 0) {
             delete userDeposits[user];
-            delete lastDepositTimes[user];
+            delete lastActivityTimes[user];
         }
 
         cloudToken.safeTransfer(user, amount);
@@ -137,7 +138,7 @@ contract CloudStakeVault is Ownable, ReentrancyGuard, Pausable {
         delete emergencyWithdrawAmounts[msg.sender];
         delete emergencyWithdrawRequests[msg.sender];
         delete userDeposits[msg.sender];
-        delete lastDepositTimes[msg.sender];
+        delete lastActivityTimes[msg.sender];
 
         cloudToken.safeTransfer(msg.sender, amount);
 
