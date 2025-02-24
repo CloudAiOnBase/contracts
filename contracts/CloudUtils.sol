@@ -16,7 +16,9 @@ contract CloudUtils is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     event ExclusionUpdated(address wallet, bool isExcluded);
 
     /// @custom:oz-upgrades-unsafe-allow constructor
-    constructor() initializer {}
+    constructor() {
+        _disableInitializers();
+    }
 
     function initialize(address _cloudToken) public initializer {
         require(_cloudToken != address(0), "Invalid token address");

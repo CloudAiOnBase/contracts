@@ -68,7 +68,7 @@ contract CloudRewardPool is Ownable, ReentrancyGuard, Pausable {
         require(lastActionTime > 0, "No action time");
 
         uint256 elapsedTime = block.timestamp - lastActionTime;
-        return (totalStaked * elapsedTime * rugDetectionApr) / (365 days * 100);
+        return (totalStaked * elapsedTime * (rugDetectionApr)) / (365 days * 100) * 1001 / 1000; // add 0.1% margin
     }
 
 
@@ -116,7 +116,7 @@ contract CloudRewardPool is Ownable, ReentrancyGuard, Pausable {
         require(cloudToken.balanceOf(address(this)) >= _rewardAmount,   "Insufficient rewards");
 
         uint256 entitledRewards = _secureRewardThreshold(_recipient);
-        require(_rewardAmount <= entitledRewards, "Requested amount exceeds entitled rewards"); // Ensure the requested reward amount does not exceed the rugDetectionApr
+        require(_rewardAmount < entitledRewards, "Requested amount exceeds entitled rewards"); // Ensure the requested reward amount does not exceed the rugDetectionApr
 
         lastRewardClaimTimes[_recipient] = block.timestamp;
 

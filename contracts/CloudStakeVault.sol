@@ -10,11 +10,15 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
 
+interface ICloudStaking {
+    function handleInactivityOne(address stakerAddr)        external;
+}
+
 contract CloudStakeVault is Ownable, ReentrancyGuard, Pausable {
     using SafeERC20 for IERC20;
 
     IERC20 public immutable cloudToken;
-    address public cloudStaking;
+    ICloudStaking    public cloudStaking;
     uint256 public constant EMERGENCY_COOLDOWN = 30 days;
 
     mapping(address => uint256) private userDeposits;
@@ -33,11 +37,11 @@ contract CloudStakeVault is Ownable, ReentrancyGuard, Pausable {
         require(_cloudStaking != address(0),    "Invalid staking address");
 
         cloudToken             = IERC20(_cloudToken);
-        cloudStaking           = _cloudStaking;
+        cloudStaking           = ICloudStaking(_cloudStaking);
     }
 
     modifier onlyStakingContract() {
-        require(msg.sender == cloudStaking, "Only CloudStaking can call this function");
+        require(msg.sender == address(cloudStaking), "Only CloudStaking can call this function");
         _;
     }
 
@@ -76,14 +80,14 @@ contract CloudStakeVault is Ownable, ReentrancyGuard, Pausable {
     // PUBLIC FUNCTIONS
     // ============================================
 
-    function setStakingContractAddress(address _newCloudStaking)                        external onlyOwner {
+    function setStakingContract(address _newCloudStaking)                               external onlyOwner {
         require(_newCloudStaking != address(0),               "Invalid address");
-        require(_newCloudStaking != cloudStaking,             "Same address already set");
+        require(_newCloudStaking != address(cloudStaking),    "Same address already set");
 
-        address oldCloudStaking         = cloudStaking;
-        cloudStaking                    = _newCloudStaking;
+        address oldCloudStaking     = address(cloudStaking);
+        cloudStaking                = ICloudStaking(_newCloudStaking);
 
-        emit StakingContractAddressUpdated(oldCloudStaking, cloudStaking);
+        emit StakingContractAddressUpdated(oldCloudStaking, _newCloudStaking);
     }
 
     function deposit(address user, uint256 amount)                                      external onlyStakingContract whenNotPaused nonReentrant {
@@ -124,6 +128,8 @@ contract CloudStakeVault is Ownable, ReentrancyGuard, Pausable {
         emergencyWithdrawAmounts[msg.sender]  = userDeposits[msg.sender];
         userDeposits[msg.sender]              = 0;
         emergencyWithdrawRequests[msg.sender] = block.timestamp;
+
+        try cloudStaking.handleInactivityOne(msg.sender) { } catch { } // notify CloudStaking
 
         emit EmergencyWithdrawRequested(msg.sender, block.timestamp);
     }

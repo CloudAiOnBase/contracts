@@ -60,6 +60,7 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
     uint256 private stakedCircSupplyMax;
     uint256 private maintenanceBatchSize;
     uint256 public lastProcessedStaker;
+    bool public forceFailTest; // Control success/failure
 
     struct Staker {
         uint256 stakedAmount;
@@ -88,7 +89,9 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
     event handleInactivityCompleted ();
 
     /// @custom:oz-upgrades-unsafe-allow constructor
-    constructor() initializer {}
+    constructor() {
+        _disableInitializers();
+    }
 
     /// @notice Initializes the contract replacing a constructor
     function initialize(address _cloudToken, address _cloudStakeVault, address _cloudRewardPool, address _cloudUtils) public initializer {
@@ -129,8 +132,8 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
 
     function getAprE2()                                             public view returns (uint256) {
         // Normal APR
-        uint256 stakedCircSupplyMinE18  = stakedCircSupplyMin * 1e18;
-        uint256 stakedCircSupplyMaxE18  = stakedCircSupplyMax * 1e18;
+        uint256 stakedCircSupplyMinE18  = stakedCircSupplyMin * 1e18 / 100;
+        uint256 stakedCircSupplyMaxE18  = stakedCircSupplyMax * 1e18 / 100;
         uint256 aprMaxE18               = aprMax * 1e18;
 
         // -- Formula: APR = aprMax - max(0, min(1, (Staked Percentage - stakedCircSupplyMin) / (stakedCircSupplyMax - stakedCircSupplyMin)) × (aprMax-aprMin)
@@ -179,29 +182,6 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
         return rewards;
     }
 
-    function getStakerInfo(address stakerAddr)                      external view returns (
-            uint256 stakedAmount,
-            uint256 lastRewardClaimTime,
-            uint256 unstakingAmount,
-            uint256 unstakingStartTime,
-            uint256 claimableTimestamp,
-            uint256 totalEarnedRewards,
-            uint256 lastActivityTime,
-            bool    isActive
-        )
-    {
-        Staker storage st = stakers[stakerAddr];
-
-        stakedAmount        = st.stakedAmount;
-        lastRewardClaimTime = st.lastRewardClaimTime;
-        unstakingAmount     = st.unstakingAmount;
-        unstakingStartTime  = st.unstakingStartTime;
-        claimableTimestamp  = st.unstakingStartTime + cooldown;
-        totalEarnedRewards  = st.totalEarnedRewards;
-        lastActivityTime    = st.lastActivityTime;
-        isActive            = st.isActive;
-    }
-
     function getStakingParams()                                     external view returns (
         uint256 _minStakeAmount,
         uint256 _cooldown,
@@ -224,7 +204,7 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
         _maintenanceBatchSize           = maintenanceBatchSize;
     }
 
-    function getStakersData(address[] memory stakerAddresses)      external view returns (uint256[] memory stakedAmounts, bool[] memory isActives) {
+    function getStakersData(address[] memory stakerAddresses)       external view returns (uint256[] memory stakedAmounts, bool[] memory isActives) {
         uint256 length      = stakerAddresses.length;
         stakedAmounts       = new uint256[](length);
         isActives           = new bool[](length);
@@ -332,11 +312,14 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
         }    
     }
 
-    function _claimRewards(address stakerAddr)                      internal nonReentrant {
+    function _claimRewards(address stakerAddr)                      internal  {
 
         Staker storage st = stakers[stakerAddr];
 
-        require(st.stakedAmount > 0,                        "Not an active staker");
+        if (st.stakedAmount == 0) {
+            return; 
+        }
+
         require(block.timestamp > st.lastRewardClaimTime,   "Already claimed recently");
 
         uint256 rewards = calculateRewards(stakerAddr);
@@ -378,6 +361,57 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
         st.lastActivityTime = block.timestamp;
     }
 
+    function _handleInactivity(uint256 batchSize)                   internal {
+
+        if (batchSize == 0) return;
+
+        uint256 processedCount      = 0;
+        uint256 i                   = lastProcessedStaker;
+        uint256 listLength          = stakerList.length;
+        
+
+        while (i < listLength && processedCount < batchSize) {
+
+            address stakerAddr = stakerList[i];
+
+            _handleInactivityOne(stakerAddr);
+            
+            i++;
+            processedCount++;
+        }
+
+        emit handleInactivityProcessed((i > 0) ? i - 1 : 0);
+
+        lastProcessedStaker = (i >= listLength) ? 0 : i;
+
+        if (lastProcessedStaker == 0) {
+            emit handleInactivityCompleted();
+        }
+    }
+
+    function _handleInactivityOne(address stakerAddr)               internal {
+
+        Staker storage st  = stakers[stakerAddr];        
+        uint256 currentTimestamp    = block.timestamp;
+
+        // sync with vault in case of a direct emergency withdraw in the vault
+         _syncStakerWithVault(stakerAddr);
+
+        if(st.stakedAmount > 0)
+        {
+            // ignore in tally
+            if(st.isActive && currentTimestamp >= st.lastActivityTime + governanceInactivityThreshold) {
+                _deactivateStaker(stakerAddr);
+            }
+
+            // auto unstake
+            if(currentTimestamp >= st.lastActivityTime + autoUnstakePeriod) {
+                _initiateUnstake(stakerAddr, st.stakedAmount);
+
+                emit AutoUnstaked(stakerAddr, st.stakedAmount);
+            }
+        }
+    }
 
     // ============================================
     // PUBLIC FUNCTIONS
@@ -459,47 +493,14 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
 
     function handleInactivity(uint256 batchSize)                                        public whenNotPaused nonReentrant {
 
-        if (batchSize == 0) return;
+        _handleInactivity(batchSize);
+    }
 
-        uint256 processedCount      = 0;
-        uint256 i                   = lastProcessedStaker;
-        uint256 listLength          = stakerList.length;
-        uint256 currentTimestamp    = block.timestamp;
+    function handleInactivityOne(address stakerAddr)                                    public whenNotPaused nonReentrant {
 
-        while (i < listLength && processedCount < batchSize) {
+        if(forceFailTest) return;
 
-            address stakerAddr = stakerList[i];
-            Staker storage st  = stakers[stakerAddr];
-
-            // sync with vault in case of a direct emergency withdraw in the vault
-             _syncStakerWithVault(stakerAddr);
-
-            if(st.stakedAmount > 0)
-            {
-                // ignore in tally
-                if(st.isActive && currentTimestamp >= st.lastActivityTime + governanceInactivityThreshold) {
-                    _deactivateStaker(stakerAddr);
-                }
-
-                // auto unstake
-                if(currentTimestamp >= st.lastActivityTime + autoUnstakePeriod) {
-                    _initiateUnstake(stakerAddr, st.stakedAmount);
-
-                    emit AutoUnstaked(stakerAddr, st.stakedAmount);
-                }
-            }
-
-            i++;
-            processedCount++;
-        }
-
-        emit handleInactivityProcessed((i > 0) ? i - 1 : 0);
-
-        lastProcessedStaker = (i >= listLength) ? 0 : i;
-
-        if (lastProcessedStaker == 0) {
-            emit handleInactivityCompleted();
-        }
+        _handleInactivityOne(stakerAddr);
     }
 
     function stake(uint256 amount)                                                      external whenNotPaused nonReentrant {
@@ -511,8 +512,8 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
 
         Staker storage st = stakers[msg.sender];
 
-        require(st.stakedAmount + st.unstakingAmount + amount >= minStakeAmount,    "Total stake below minimum required");
-        require(cloudToken.allowance(msg.sender, address(this)) >= amount,          "Insufficient allowance");
+        require(st.stakedAmount + st.unstakingAmount + amount >= minStakeAmount,        "Total stake below minimum required");
+        require(cloudToken.allowance(msg.sender, address(cloudStakeVault)) >= amount,   "Insufficient allowance");
 
         _reactivateStaker   (msg.sender);
 
@@ -545,13 +546,17 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
     function claimRewards()                                                             external whenNotPaused nonReentrant {
         _syncStakerWithVault(msg.sender);
 
+        Staker storage st = stakers[msg.sender];
+
+        require(st.stakedAmount > 0,   "No staked tokens");
+
         _reactivateStaker   (msg.sender);
 
         _claimRewards       (msg.sender);
 
         _updateLastActivity (msg.sender);
 
-        handleInactivity(maintenanceBatchSize); 
+        _handleInactivity(maintenanceBatchSize); 
     }
 
     function initiateUnstake(uint256 amount)                                            external whenNotPaused nonReentrant {
@@ -563,7 +568,7 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
 
         _updateLastActivity (msg.sender);
 
-        handleInactivity(maintenanceBatchSize); 
+        _handleInactivity(maintenanceBatchSize); 
     }
 
     function cancelUnstaking()                                                          external whenNotPaused nonReentrant {
@@ -581,7 +586,7 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
 
         _updateLastActivity (msg.sender);
 
-        handleInactivity    (maintenanceBatchSize);
+        _handleInactivity    (maintenanceBatchSize);
     }
 
     function claimUnstakedTokens()                                                      external whenNotPaused nonReentrant {
@@ -607,7 +612,7 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
         _updateLastActivity(msg.sender);
     }
 
-    function recoverMistakenTokens      (address _token, address _recipient, uint256 _amount)   external onlyOwner {
+    function recoverMistakenTokens(address _token, address _recipient, uint256 _amount) external onlyOwner {
         require(_recipient != address(0),       "Invalid recipient address");
 
         IERC20(_token).safeTransfer(_recipient, _amount);
@@ -619,6 +624,10 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
 
     function unpause()                                                                  external onlyOwner {
         _unpause();
+    }
+
+    function setForceFailTest(bool _fail)                                               external onlyOwner{
+        forceFailTest = _fail;
     }
 
     // storage gap for upgrade safety, prevents storage conflicts in future versions
