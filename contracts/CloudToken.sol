@@ -30,4 +30,3 @@ contract CloudToken is ERC20, Ownable {
 		_transferOwnership(address(0)); // Makes contract ownerless
 	}
 }
-
