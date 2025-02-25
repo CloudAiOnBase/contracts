@@ -1,5 +1,6 @@
 {
   "baseSepolia": {
+    "CloudToken": "0x7742219d36b99faafe6ae9b0e1bbea5c03748e2d",
     "CloudUtils": "0xE8cb9703Dbb199e68906bD90048DF30d9b85D470",
     "CloudStakeVault": "0x67DBB32dFf2Ea28B5cBc26B51bB1A9FcdD2ebD0D",
     "CloudRewardPool": "0xD4f13100463eCcFC5a40b83Cc9b28D02Feea624F",

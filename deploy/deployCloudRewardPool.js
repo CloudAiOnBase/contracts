@@ -39,3 +39,25 @@ main().catch((error) => {
     console.error(error);
     process.exit(1);
 });
+
+
+/*
+
+npx hardhat run scripts/deployCloudStakeVault.js --network baseSepolia
+
+npx hardhat verify --network baseSepolia $(jq -r '.baseSepolia.CloudRewardPool' deployed_addresses.json) \
+$(jq -r '.baseSepolia.CloudToken' deployed_addresses.json) \
+0x000000000000000000000000000000000000dEaD \
+$(jq -r '.baseSepolia.CloudStakeVault' deployed_addresses.json) \
+10
+
+
+npx hardhat console --network baseSepolia
+const CloudRewardPool = await ethers.getContractFactory("CloudRewardPool");
+const cloudRewardPool = await CloudRewardPool.attach("0xD4f13100463eCcFC5a40b83Cc9b28D02Feea624F");
+const tx = await cloudRewardPool.setStakingContract("0xB78c584ed07B1b0Bf8Bc6bdD48d32f31f599434d");
+await tx.wait();
+
+
+*/
+

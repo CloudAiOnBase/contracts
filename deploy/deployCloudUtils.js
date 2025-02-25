@@ -28,3 +28,11 @@ main().catch((error) => {
     console.error(error);
     process.exit(1);
 });
+
+/*
+
+npx hardhat run scripts/deployCloudUtils.js --network baseSepolia
+
+npx hardhat verify --network baseSepolia $(jq -r '.baseSepolia.CloudUtils' deployed_addresses.json)
+
+*/

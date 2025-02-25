@@ -42,3 +42,11 @@ main().catch((error) => {
     console.error(error);
     process.exit(1);
 });
+
+/*
+
+npx hardhat run scripts/deployCloudStakeVault.js --network baseSepolia
+
+npx hardhat verify --network baseSepolia $(jq -r '.baseSepolia.CloudStaking' deployed_addresses.json)
+
+*/
