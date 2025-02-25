@@ -1194,6 +1194,393 @@
             "label": "cloudToken",
             "offset": 0,
             "slot": "0",
+            "type": "t_contract(IERC20)2595",
+            "contract": "CloudStaking",
+            "src": "contracts/CloudStaking.sol:45"
+          },
+          {
+            "label": "cloudStakeVault",
+            "offset": 0,
+            "slot": "1",
+            "type": "t_contract(ICloudStakeVault)4827",
+            "contract": "CloudStaking",
+            "src": "contracts/CloudStaking.sol:46"
+          },
+          {
+            "label": "cloudRewardPool",
+            "offset": 0,
+            "slot": "2",
+            "type": "t_contract(ICloudRewardPool)4840",
+            "contract": "CloudStaking",
+            "src": "contracts/CloudStaking.sol:47"
+          },
+          {
+            "label": "cloudUtils",
+            "offset": 0,
+            "slot": "3",
+            "type": "t_contract(ICloudUtils)4846",
+            "contract": "CloudStaking",
+            "src": "contracts/CloudStaking.sol:48"
+          },
+          {
+            "label": "totalStakers",
+            "offset": 0,
+            "slot": "4",
+            "type": "t_uint256",
+            "contract": "CloudStaking",
+            "src": "contracts/CloudStaking.sol:50"
+          },
+          {
+            "label": "totalStaked",
+            "offset": 0,
+            "slot": "5",
+            "type": "t_uint256",
+            "contract": "CloudStaking",
+            "src": "contracts/CloudStaking.sol:51"
+          },
+          {
+            "label": "totalStakedForTally",
+            "offset": 0,
+            "slot": "6",
+            "type": "t_uint256",
+            "contract": "CloudStaking",
+            "src": "contracts/CloudStaking.sol:52"
+          },
+          {
+            "label": "minStakeAmount",
+            "offset": 0,
+            "slot": "7",
+            "type": "t_uint256",
+            "contract": "CloudStaking",
+            "src": "contracts/CloudStaking.sol:53"
+          },
+          {
+            "label": "cooldown",
+            "offset": 0,
+            "slot": "8",
+            "type": "t_uint256",
+            "contract": "CloudStaking",
+            "src": "contracts/CloudStaking.sol:54"
+          },
+          {
+            "label": "governanceInactivityThreshold",
+            "offset": 0,
+            "slot": "9",
+            "type": "t_uint256",
+            "contract": "CloudStaking",
+            "src": "contracts/CloudStaking.sol:55"
+          },
+          {
+            "label": "autoUnstakePeriod",
+            "offset": 0,
+            "slot": "10",
+            "type": "t_uint256",
+            "contract": "CloudStaking",
+            "src": "contracts/CloudStaking.sol:56"
+          },
+          {
+            "label": "aprMin",
+            "offset": 0,
+            "slot": "11",
+            "type": "t_uint256",
+            "contract": "CloudStaking",
+            "src": "contracts/CloudStaking.sol:57"
+          },
+          {
+            "label": "aprMax",
+            "offset": 0,
+            "slot": "12",
+            "type": "t_uint256",
+            "contract": "CloudStaking",
+            "src": "contracts/CloudStaking.sol:58"
+          },
+          {
+            "label": "stakedCircSupplyMin",
+            "offset": 0,
+            "slot": "13",
+            "type": "t_uint256",
+            "contract": "CloudStaking",
+            "src": "contracts/CloudStaking.sol:59"
+          },
+          {
+            "label": "stakedCircSupplyMax",
+            "offset": 0,
+            "slot": "14",
+            "type": "t_uint256",
+            "contract": "CloudStaking",
+            "src": "contracts/CloudStaking.sol:60"
+          },
+          {
+            "label": "maintenanceBatchSize",
+            "offset": 0,
+            "slot": "15",
+            "type": "t_uint256",
+            "contract": "CloudStaking",
+            "src": "contracts/CloudStaking.sol:61"
+          },
+          {
+            "label": "lastProcessedStaker",
+            "offset": 0,
+            "slot": "16",
+            "type": "t_uint256",
+            "contract": "CloudStaking",
+            "src": "contracts/CloudStaking.sol:62"
+          },
+          {
+            "label": "forceFailTest",
+            "offset": 0,
+            "slot": "17",
+            "type": "t_uint256",
+            "contract": "CloudStaking",
+            "src": "contracts/CloudStaking.sol:63"
+          },
+          {
+            "label": "stakers",
+            "offset": 0,
+            "slot": "18",
+            "type": "t_mapping(t_address,t_struct(Staker)4915_storage)",
+            "contract": "CloudStaking",
+            "src": "contracts/CloudStaking.sol:75"
+          },
+          {
+            "label": "stakerList",
+            "offset": 0,
+            "slot": "19",
+            "type": "t_array(t_address)dyn_storage",
+            "contract": "CloudStaking",
+            "src": "contracts/CloudStaking.sol:76"
+          },
+          {
+            "label": "stakerIndex",
+            "offset": 0,
+            "slot": "20",
+            "type": "t_mapping(t_address,t_uint256)",
+            "contract": "CloudStaking",
+            "src": "contracts/CloudStaking.sol:77"
+          },
+          {
+            "label": "__gap",
+            "offset": 0,
+            "slot": "21",
+            "type": "t_array(t_uint256)50_storage",
+            "contract": "CloudStaking",
+            "src": "contracts/CloudStaking.sol:642"
+          }
+        ],
+        "types": {
+          "t_address": {
+            "label": "address",
+            "numberOfBytes": "20"
+          },
+          "t_bool": {
+            "label": "bool",
+            "numberOfBytes": "1"
+          },
+          "t_struct(InitializableStorage)73_storage": {
+            "label": "struct Initializable.InitializableStorage",
+            "members": [
+              {
+                "label": "_initialized",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "_initializing",
+                "type": "t_bool",
+                "offset": 8,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(OwnableStorage)13_storage": {
+            "label": "struct OwnableUpgradeable.OwnableStorage",
+            "members": [
+              {
+                "label": "_owner",
+                "type": "t_address",
+                "offset": 0,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(PausableStorage)219_storage": {
+            "label": "struct PausableUpgradeable.PausableStorage",
+            "members": [
+              {
+                "label": "_paused",
+                "type": "t_bool",
+                "offset": 0,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(ReentrancyGuardStorage)283_storage": {
+            "label": "struct ReentrancyGuardUpgradeable.ReentrancyGuardStorage",
+            "members": [
+              {
+                "label": "_status",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_uint256": {
+            "label": "uint256",
+            "numberOfBytes": "32"
+          },
+          "t_uint64": {
+            "label": "uint64",
+            "numberOfBytes": "8"
+          },
+          "t_array(t_address)dyn_storage": {
+            "label": "address[]",
+            "numberOfBytes": "32"
+          },
+          "t_array(t_uint256)50_storage": {
+            "label": "uint256[50]",
+            "numberOfBytes": "1600"
+          },
+          "t_contract(ICloudRewardPool)4840": {
+            "label": "contract ICloudRewardPool",
+            "numberOfBytes": "20"
+          },
+          "t_contract(ICloudStakeVault)4827": {
+            "label": "contract ICloudStakeVault",
+            "numberOfBytes": "20"
+          },
+          "t_contract(ICloudUtils)4846": {
+            "label": "contract ICloudUtils",
+            "numberOfBytes": "20"
+          },
+          "t_contract(IERC20)2595": {
+            "label": "contract IERC20",
+            "numberOfBytes": "20"
+          },
+          "t_mapping(t_address,t_struct(Staker)4915_storage)": {
+            "label": "mapping(address => struct CloudStaking.Staker)",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_address,t_uint256)": {
+            "label": "mapping(address => uint256)",
+            "numberOfBytes": "32"
+          },
+          "t_struct(Staker)4915_storage": {
+            "label": "struct CloudStaking.Staker",
+            "members": [
+              {
+                "label": "stakedAmount",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "lastRewardClaimTime",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "1"
+              },
+              {
+                "label": "unstakingAmount",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "2"
+              },
+              {
+                "label": "unstakingStartTime",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "3"
+              },
+              {
+                "label": "totalEarnedRewards",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "4"
+              },
+              {
+                "label": "lastActivityTime",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "5"
+              },
+              {
+                "label": "isActive",
+                "type": "t_bool",
+                "offset": 0,
+                "slot": "6"
+              }
+            ],
+            "numberOfBytes": "224"
+          }
+        },
+        "namespaces": {
+          "erc7201:openzeppelin.storage.Pausable": [
+            {
+              "contract": "PausableUpgradeable",
+              "label": "_paused",
+              "type": "t_bool",
+              "src": "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol:21",
+              "offset": 0,
+              "slot": "0"
+            }
+          ],
+          "erc7201:openzeppelin.storage.ReentrancyGuard": [
+            {
+              "contract": "ReentrancyGuardUpgradeable",
+              "label": "_status",
+              "type": "t_uint256",
+              "src": "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol:43",
+              "offset": 0,
+              "slot": "0"
+            }
+          ],
+          "erc7201:openzeppelin.storage.Ownable": [
+            {
+              "contract": "OwnableUpgradeable",
+              "label": "_owner",
+              "type": "t_address",
+              "src": "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol:24",
+              "offset": 0,
+              "slot": "0"
+            }
+          ],
+          "erc7201:openzeppelin.storage.Initializable": [
+            {
+              "contract": "Initializable",
+              "label": "_initialized",
+              "type": "t_uint64",
+              "src": "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol:69",
+              "offset": 0,
+              "slot": "0"
+            },
+            {
+              "contract": "Initializable",
+              "label": "_initializing",
+              "type": "t_bool",
+              "src": "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol:73",
+              "offset": 8,
+              "slot": "0"
+            }
+          ]
+        }
+      }
+    },
+    "ab6cb45f6fc3e43a64784a0cc27bb1fc02fbbb88dd87fb17b19c6f530f6a5d6e": {
+      "address": "0x450F3aDcC66bc7dcC57fAa1F7Ef51835e0ED89B4",
+      "txHash": "0x0c0b026a7165031898a1012e3ccc39829aa86d64bb8eed738155f1ef6e101d91",
+      "layout": {
+        "solcVersion": "0.8.22",
+        "storage": [
+          {
+            "label": "cloudToken",
+            "offset": 0,
+            "slot": "0",
             "type": "t_contract(IERC20)1484",
             "contract": "CloudStaking",
             "src": "contracts/CloudStaking.sol:45"

@@ -49,4 +49,31 @@ npx hardhat run scripts/deployCloudStakeVault.js --network baseSepolia
 
 npx hardhat verify --network baseSepolia $(jq -r '.baseSepolia.CloudStaking' deployed_addresses.json)
 
+
+
+
+const tx3 = await cloudStaking.updateStakingParameters(
+  [0, 1, 2, 3, 5, 4, 7, 6, 8], // Parameter keys
+  [
+    ethers.parseEther("100"),    // Minimum stake amount 
+    7 * 24 * 60 * 60,            // cooldown
+    365 * 24 * 60 * 60,          
+    3 * 365 * 24 * 60 * 60,      
+    10,                          
+    4,                           
+    50,                          
+    10,                          
+    2                           
+  ]
+);
+await tx.wait();
+
+
+let trx = await cloudStaking.updateStakingParameters([1], [20]); 
+await trx.wait();
+
+console.log("✅ Staking parameters updated successfully!");
+
+
+
 */

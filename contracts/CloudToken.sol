@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-// Author: CloudAI Dev Team
-// Developed by @BullBoss5
-
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
@@ -33,4 +30,3 @@ contract CloudToken is ERC20, Ownable {
 		_transferOwnership(address(0)); // Makes contract ownerless
 	}
 }
-
