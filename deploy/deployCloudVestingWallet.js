@@ -5,9 +5,10 @@ async function main() {
     console.log("Deploying contract with account:", deployer.address);
 
     // Set vesting details
-    const beneficiary = "0xeA63c473D43990e1b9f1bB4d6B22f375CF414fE6";                   //0xeA63c473D43990e1b9f1bB4d6B22f375CF414fE6
-    const startTime   = Math.floor(Date.now() / 1000) + ((365 - 12) * 24 * 60 * 60);    // 1-year cliff - 12 days (project launch date)
-    const duration    = 4 * 365 * 24 * 60 * 60;                                         // 4-year vesting
+    const latestBlock = await hre.ethers.provider.getBlock("latest");
+    const beneficiary = "0x0d237B1F097FD118652e84C51Cd5452086728d01";           //0x0d237B1F097FD118652e84C51Cd5452086728d01 (CloudAI wallet)
+    const startTime   = latestBlock.timestamp + (0 * 24 * 60 * 60);             // 0-year cliff
+    const duration    = 10 * 365 * 24 * 60 * 60;                                // 10-year vesting
 
     // Add a console log to display vesting details
     console.log(beneficiary, " - ", startTime.toString(), " - ", duration.toString());
