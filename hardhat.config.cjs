@@ -15,13 +15,6 @@ module.exports = {
       accounts: process.env.PRIVATE_KEY ? [`0x${process.env.PRIVATE_KEY}`] : [],
       chainId: 84532,
     },
-    hardhat: {
-      chainId: 31337,
-      accounts: {
-        mnemonic: "test test test test test test test test test test test junk",
-      },
-      saveDeployments: false,
-    },
   },
   etherscan: {
     apiKey: {

@@ -1,6 +1,7 @@
 const hre = require("hardhat");
 const { saveDeployedAddress } = require("./save_address");
 const fs = require("fs");
+const path = require("path");
 require("dotenv").config();
 
 async function main() {
@@ -112,6 +113,24 @@ async function main() {
     console.log(`✅ Community fund (${commFundAddress}) and Dev fund (${devFundAddress}) received 400M CLOUD tokens each.`);
 
     console.log("✅ Local deployment completed successfully!");
+
+    // Directory where ABIs will be stored
+    const abiDir = path.join(__dirname, "../abis/localhost");
+    if (!fs.existsSync(abiDir)) {
+        fs.mkdirSync(abiDir, { recursive: true });
+    }
+
+    // List of deployed contracts to save ABIs
+    const contractsToSave = ["CloudToken", "CloudUtils", "CloudStakeVault", "CloudRewardPool", "CloudStaking"];
+
+    contractsToSave.forEach(contractName => {
+        const artifact = hre.artifacts.readArtifactSync(contractName);
+        const abiPath = path.join(abiDir, `${contractName}.json`);
+        fs.writeFileSync(abiPath, JSON.stringify(artifact.abi, null, 2));
+    });
+
+    console.log("✅ Localhost ABIs exported to contracts/abis/localhost/");
+
 }
 
 // Run the script
@@ -119,3 +138,20 @@ main().catch((error) => {
     console.error(error);
     process.exit(1);
 });
+
+
+/*
+
+How to use: 
+
+npx hardhat node  
+npx hardhat run deploy/deployCloudContractsLocally.js --network localhost
+
+Or:
+
+npx hardhat node & sleep 2 && npx hardhat run deploy/deployCloudContractsLocally.js --network localhost
+
+*/
+
+
+
