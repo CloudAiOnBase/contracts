@@ -1,6 +1,7 @@
 const hre = require("hardhat");
 const { saveDeployedAddress } = require("./save_address");
 const fs = require("fs");
+const path = require("path");
 require("dotenv").config();
 
 async function main() {
@@ -15,7 +16,10 @@ async function main() {
         throw new Error("Cloud Token address is missing from environment variables.");
     }
 
-    const deployedAddresses = JSON.parse(fs.readFileSync("./deployed_addresses.json", "utf8"));
+    // Resolve path to deployments.json regardless of where the script is executed from
+    const deploymentsPath = path.join(__dirname, "deployments.json");
+    const deployedAddresses = JSON.parse(fs.readFileSync(deploymentsPath, "utf8"));
+
     const cloudStakeVaultAddress = deployedAddresses[hre.network.name]?.CloudStakeVault;
     const cloudRewardPoolAddress = deployedAddresses[hre.network.name]?.CloudRewardPool;
     const cloudUtilsAddress      = deployedAddresses[hre.network.name]?.CloudUtils;

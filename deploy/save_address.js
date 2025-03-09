@@ -1,33 +1,23 @@
 const fs = require("fs");
+const path = require("path");
 
-function saveDeployedAddress(contractName, address, networkName) {
-    const filePath = "./deployed_addresses.json";
+const DEPLOY_FILE = path.join(__dirname, "deployments.json"); // Ensures correct path
 
-    let deployedContracts = {};
-    
-    // Check if the file exists and read it safely
-    if (fs.existsSync(filePath)) {
-        try {
-            const data = fs.readFileSync(filePath, "utf8");
-            deployedContracts = data ? JSON.parse(data) : {};
-        } catch (error) {
-            console.error("Error reading deployed_addresses.json. Resetting file.");
-            deployedContracts = {};  // Reset to an empty object in case of corrupted JSON
-        }
+function saveDeployedAddress(contractName, contractAddress, networkName) {
+    let addresses = {};
+
+    if (fs.existsSync(DEPLOY_FILE)) {
+        addresses = JSON.parse(fs.readFileSync(DEPLOY_FILE, "utf8"));
     }
 
-    // Ensure network key exists
-    if (!deployedContracts[networkName]) {
-        deployedContracts[networkName] = {};
+    if (!addresses[networkName]) {
+        addresses[networkName] = {};
     }
 
-    // Save the new contract address
-    deployedContracts[networkName][contractName] = address;
+    addresses[networkName][contractName] = contractAddress;
+    fs.writeFileSync(DEPLOY_FILE, JSON.stringify(addresses, null, 2));
 
-    // Write updated data back to JSON file
-    fs.writeFileSync(filePath, JSON.stringify(deployedContracts, null, 2));
-    console.log(`${contractName} address saved in deployed_addresses.json:`, address);
+    //console.log(`✅ Saved ${contractName} address for ${networkName}: ${contractAddress}`);
 }
 
 module.exports = { saveDeployedAddress };
-
