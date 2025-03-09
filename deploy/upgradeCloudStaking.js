@@ -1,5 +1,6 @@
 const hre = require("hardhat");
 const fs = require("fs");
+const path = require("path");
 require("dotenv").config();
 
 async function main() {
@@ -7,7 +8,10 @@ async function main() {
     console.log("Upgrading CloudStaking with account:", deployer.address);
 
     // Load the previously deployed proxy address
-    const deployedAddresses = JSON.parse(fs.readFileSync("deployments.json", "utf8"));
+    // Resolve path to deployments.json regardless of where the script is executed from
+    const deploymentsPath = path.resolve(__dirname, "../deployments.json");
+    const deployedAddresses = JSON.parse(fs.readFileSync(deploymentsPath, "utf8"));
+
     const cloudStakingProxyAddress = deployedAddresses[hre.network.name]?.CloudStaking;
 
     if (!cloudStakingProxyAddress) {
