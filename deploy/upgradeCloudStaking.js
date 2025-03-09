@@ -9,7 +9,7 @@ async function main() {
 
     // Load the previously deployed proxy address
     // Resolve path to deployments.json regardless of where the script is executed from
-    const deploymentsPath = path.resolve(__dirname, "../deployments.json");
+    const deploymentsPath = path.join(__dirname, "deployments.json");
     const deployedAddresses = JSON.parse(fs.readFileSync(deploymentsPath, "utf8"));
 
     const cloudStakingProxyAddress = deployedAddresses[hre.network.name]?.CloudStaking;
