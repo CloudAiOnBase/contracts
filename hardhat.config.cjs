@@ -1,7 +1,6 @@
 require("@nomicfoundation/hardhat-toolbox");
 require("@openzeppelin/hardhat-upgrades"); 
 require("hardhat-contract-sizer");
-require("hardhat-deploy");
 require("dotenv").config();
 
 module.exports = {
@@ -15,6 +14,13 @@ module.exports = {
       url: process.env.BASE_SEPOLIA_RPC_URL || "https://sepolia.base.org",
       accounts: process.env.PRIVATE_KEY ? [`0x${process.env.PRIVATE_KEY}`] : [],
       chainId: 84532,
+    },
+    hardhat: {
+      chainId: 31337,
+      accounts: {
+        mnemonic: "test test test test test test test test test test test junk",
+      },
+      saveDeployments: false,
     },
   },
   etherscan: {

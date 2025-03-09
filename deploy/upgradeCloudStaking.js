@@ -7,11 +7,11 @@ async function main() {
     console.log("Upgrading CloudStaking with account:", deployer.address);
 
     // Load the previously deployed proxy address
-    const deployedAddresses = JSON.parse(fs.readFileSync("./deployed_addresses.json", "utf8"));
+    const deployedAddresses = JSON.parse(fs.readFileSync("deployments.json", "utf8"));
     const cloudStakingProxyAddress = deployedAddresses[hre.network.name]?.CloudStaking;
 
     if (!cloudStakingProxyAddress) {
-        throw new Error("CloudStaking proxy address not found. Ensure it's deployed and added to deployed_addresses.json");
+        throw new Error("CloudStaking proxy address not found. Ensure it's deployed and added to deployments.json");
     }
 
     console.log("Using CloudStaking proxy at:", cloudStakingProxyAddress);
@@ -36,7 +36,7 @@ main().catch((error) => {
 
 npx hardhat run deploy/upgradeCloudStaking.js --network baseSepolia
 
-npx hardhat verify --network baseSepolia $(jq -r '.baseSepolia.CloudStaking' deployed_addresses.json)
+npx hardhat verify --network baseSepolia $(jq -r '.baseSepolia.CloudStaking' deployments.json)
 
 
 */

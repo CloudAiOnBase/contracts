@@ -15,7 +15,7 @@ async function main() {
         throw new Error("Cloud Token address is missing from environment variables.");
     }
 
-    const deployedAddresses = JSON.parse(fs.readFileSync("./deployed_addresses.json", "utf8"));
+    const deployedAddresses = JSON.parse(fs.readFileSync("deployments.json", "utf8"));
     const cloudStakeVaultAddress = deployedAddresses[hre.network.name]?.CloudStakeVault;
     const cloudRewardPoolAddress = deployedAddresses[hre.network.name]?.CloudRewardPool;
     const cloudUtilsAddress      = deployedAddresses[hre.network.name]?.CloudUtils;
