@@ -124,15 +124,13 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
         maintenanceBatchSize          // 8
     }
 
-    function getVersion() public pure returns (string memory) {
-        return "CloudStaking v1.0";
-    }
-
-
     // ============================================
     // VIEW FUNCTIONS
     // ============================================
 
+    function getVersion()                                           public pure returns (string memory) {
+        return "CloudStaking v1.0";
+    }
 
     function getAprE2()                                             public view returns (uint256) {
         // Normal APR
