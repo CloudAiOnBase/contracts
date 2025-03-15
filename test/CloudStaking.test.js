@@ -47,6 +47,20 @@ describe("CloudStaking", function () {
       { initializer: "initialize" }
     );
 
+    // Deploy Governor
+    CloudGovernor = await ethers.getContractFactory("CloudGovernor");
+    cloudGovernor = await CloudGovernor.deploy(
+      await cloudToken.getAddress(),
+      await cloudStaking.getAddress()
+    );
+    await cloudGovernor.waitForDeployment();
+
+    // Upgrade CloudStaking
+    const CloudStakingV2 = await ethers.getContractFactory("CloudStaking");
+    cloudStaking = await upgrades.upgradeProxy(await cloudStaking.getAddress(), CloudStakingV2);
+    const tx = await cloudStaking.initializeV2(await cloudGovernor.getAddress());
+    await tx.wait();
+
     // Set Staking Contract in other components
     await cloudStakeVault.setStakingContract(await cloudStaking.getAddress());
     await cloudRewardPool.setStakingContract(await cloudStaking.getAddress());
@@ -775,3 +789,14 @@ describe("CloudStaking", function () {
   
 
 });
+
+
+/*
+
+TO DO:
+test : 
+  uint256 lastGovernorActivityTime = cloudGovernor.getLastActivityTime(stakerAddr); // Fetch last recorded activity from the governor
+  _cleanStakedCheckpoints
+  _updateStakedCheckpoint
+  userStakedForTally
+*/
