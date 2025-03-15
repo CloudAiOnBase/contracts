@@ -7,12 +7,6 @@ pragma solidity ^0.8.19;
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/governance/Governor.sol";
 import "@openzeppelin/contracts/governance/extensions/GovernorCountingSimple.sol";
-import "@openzeppelin/contracts/governance/extensions/GovernorTimelockControl.sol";
-import "@openzeppelin/contracts/governance/TimelockController.sol";
-
-interface ICloudTimelock {
-    function updateDelay    (uint256 minDelay)                      external;
-}
 
 interface ICloudStakeVault {
     function getDepositedBalance (address user)                     external view returns (uint256);
@@ -24,11 +18,9 @@ interface ICloudStaking {
 
 contract CloudGovernor is 
     Governor, 
-    GovernorCountingSimple,
-    GovernorTimelockControl
+    GovernorCountingSimple
 {
     IERC20              public cloudToken;
-    ICloudTimelock      public cloudTimelock;
     ICloudStakeVault    public cloudStakeVault;
     ICloudStaking       public cloudStaking;
 
@@ -36,7 +28,6 @@ contract CloudGovernor is
     uint256 private votingPeriodValue;
     uint256 private proposalThresholdValue;
     uint256 private quorumValue;
-    uint256 private timelockDelayValue;
 
     mapping(uint256 => uint256) private _quorumSnapshotByBlock;
 
@@ -55,25 +46,20 @@ contract CloudGovernor is
 
     constructor(
         address _cloudToken,
-        address _cloudTimelock,
         address _cloudStakeVault,
         address _cloudStaking
     )
         Governor("CloudGovernor")
-        GovernorTimelockControl(TimelockController(payable(_cloudTimelock)))
     {
         require(_cloudToken      != address(0), "Invalid token address");
-        require(_cloudTimelock   != address(0), "Invalid timelock address");
         require(_cloudStakeVault != address(0), "Invalid stake vault address");
         require(_cloudStaking    != address(0), "Invalid staking address");
 
         votingPeriodValue      = 7 * 24 * 3600;      // 7 days in seconds
         proposalThresholdValue = 10_000 * 10**18;      // 10,000 CLOUD in wei
         quorumValue            = 10;                 // 10% quorum
-        timelockDelayValue     = 24 * 3600;          // 24 hours in seconds
 
         cloudToken      = IERC20(_cloudToken);
-        cloudTimelock   = ICloudTimelock(_cloudTimelock);
         cloudStakeVault = ICloudStakeVault(_cloudStakeVault);
         cloudStaking    = ICloudStaking(_cloudStaking);
     }
@@ -82,8 +68,7 @@ contract CloudGovernor is
     enum GovernanceParam {
         VotingPeriodValue,              // 0  in days    example: 5
         ProposalThresholdValue,         // 1  in CLOUD   example: 10,000 
-        QuorumValue,                    // 2  in %       example: 10
-        TimelockDelayValue              // 3  in hours   example: 24
+        QuorumValue                     // 2  in %       example: 10
     }
 
     // ============================================
@@ -126,13 +111,11 @@ contract CloudGovernor is
     function getGovernanceParams()                      external view returns (
         uint256 _votingPeriodValue,
         uint256 _proposalThresholdValue,
-        uint256 _quorumValue,
-        uint256 _timelockDelayValue
+        uint256 _quorumValue
     ) {
         _votingPeriodValue              = votingPeriodValue         / 24 / 3600;
         _proposalThresholdValue         = proposalThresholdValue    / 10**18;
         _quorumValue                    = quorumValue;
-        _timelockDelayValue             = timelockDelayValue        / 3600 ;
     }
 
     function proposalWalletCounts(uint256 proposalId)   public view returns (uint256 againstWallets, uint256 forWallets, uint256 abstainWallets) {
@@ -190,46 +173,6 @@ contract CloudGovernor is
 
         // Return the counted weight to match the expected return type
         return countedWeight;
-    }
-
-    /**
-     * @dev These functions are implemented in both Governor and GovernorTimelockControl.
-     * We explicitly override them here to resolve the multiple inheritance conflict.
-     * The `super` calls rely on Solidity’s C3 linearization to automatically select the correct
-     * implementation from the inheritance chain, ensuring the intended combined behavior.
-     */
-
-    function _executeOperations(
-        uint256 proposalId,
-        address[] memory targets,
-        uint256[] memory values,
-        bytes[] memory calldatas,
-        bytes32 descriptionHash
-    ) internal override(Governor, GovernorTimelockControl) {
-        super._executeOperations(proposalId, targets, values, calldatas, descriptionHash);
-    }
-
-    function _queueOperations(
-        uint256 proposalId,
-        address[] memory targets,
-        uint256[] memory values,
-        bytes[] memory calldatas,
-        bytes32 descriptionHash
-    ) internal override(Governor, GovernorTimelockControl) returns (uint48) {
-        return super._queueOperations(proposalId, targets, values, calldatas, descriptionHash);
-    }
-
-    function _cancel(
-        address[] memory targets,
-        uint256[] memory values,
-        bytes[] memory calldatas,
-        bytes32 descriptionHash
-    ) internal override(Governor, GovernorTimelockControl) returns (uint256) {
-        return super._cancel(targets, values, calldatas, descriptionHash);
-    }
-
-    function _executor() internal view override(Governor, GovernorTimelockControl) returns (address) {
-        return super._executor();
     }
 
     // ============================================
@@ -295,15 +238,6 @@ contract CloudGovernor is
                 quorumValue = values[i];
                 emit GovernanceParamUpdated(param, values[i]);
 
-            } else if (param == GovernanceParam.TimelockDelayValue) {
-                require(values[i] > 0,                                          "timelockDelayValue must be positive");
-                require(values[i] <= 96,                                        "timelockDelayValue must be <= 96");
-
-
-                timelockDelayValue = values[i] * 3600;
-                cloudTimelock.updateDelay(timelockDelayValue);
-                emit GovernanceParamUpdated(param, values[i]);
-
              } else {
                 revert("Invalid parameter key");
             }
@@ -322,21 +256,6 @@ contract CloudGovernor is
         _quorumSnapshotByBlock[snapshotBlock]   = _computeQuorum();                         // Save the current quorum value for that snapshot block.
 
         return proposalId;
-    }
-
-    /**
-    * @dev These functions are implemented in both Governor and GovernorTimelockControl.
-    * We explicitly override them here to resolve the multiple inheritance conflict.
-    * The `super` calls rely on Solidity’s C3 linearization to automatically select the correct
-    * implementation from the inheritance chain, ensuring the intended combined behavior.
-    */
-
-    function proposalNeedsQueuing(uint256 proposalId)                                       public view override(Governor, GovernorTimelockControl) returns (bool) {
-        return super.proposalNeedsQueuing(proposalId);
-    }
-
-    function state(uint256 proposalId)                                                      public view override(Governor, GovernorTimelockControl) returns (ProposalState) {
-        return super.state(proposalId);
     }
 
 }
