@@ -71,10 +71,15 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
         uint256 lastActivityTime;
         bool    isActive;
     }
-
     mapping(address => Staker) public stakers;
     address[] public stakerList;
     mapping(address => uint256) private stakerIndex;
+
+    struct StakeCheckpoint {
+        uint256 blockNumber;
+        uint256 amount;
+    }
+    mapping(address => StakeCheckpoint[]) private stakedCheckpoints;
 
     event Staked                    (address indexed staker, uint256 stakedAmount);
     event RewardsClaimed            (address indexed staker, uint256 rewards);
@@ -129,7 +134,7 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
     // ============================================
 
     function getVersion()                                           public pure returns (string memory) {
-        return "CloudStaking v1.0";
+        return "CloudStaking v1.1";
     }
 
     function getAprE2()                                             public view returns (uint256) {
@@ -242,6 +247,23 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
         return (stakerOuts, amounts);
     }
 
+    function userStakedForTally(address user, uint256 blockNumber)  external view returns (uint256) {
+
+        StakeCheckpoint[] storage checkpoints = stakedCheckpoints[user];
+
+        uint256 length = checkpoints.length;
+        if (length == 0) {
+            return 0;
+        }
+        // Iterate backwards: the most recent checkpoint comes last
+        for (uint256 i = length; i > 0; i--) {
+            if (checkpoints[i - 1].blockNumber <= blockNumber) {
+                return checkpoints[i - 1].amount;
+            }
+        }
+        return 0; // If no checkpoint exists for a block <= blockNumber
+    }
+
     // ============================================
     // INTERNAL FUNCTIONS
     // ============================================
@@ -263,6 +285,7 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
             totalStaked -= amountWithdrawn;
             if (st.isActive) {
                 totalStakedForTally -= amountWithdrawn;
+                _updateStakedCheckpoint(stakerAddr, 0);
             }
 
             st.stakedAmount = 0;
@@ -283,12 +306,13 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
 
         if(previousStake >= 1e18 && previousStake - amount < 1e18) totalStakers--;
         totalStaked             -= amount;
-        if(st.isActive) {
-            totalStakedForTally     -= amount;
-        }
         st.stakedAmount         -= amount;
         st.unstakingAmount      += amount;
         st.unstakingStartTime   = block.timestamp; // resets cooldown
+        if(st.isActive) {
+            totalStakedForTally     -= amount;
+            _updateStakedCheckpoint(stakerAddr, st.stakedAmount);
+        }
 
         emit Unstaking          (stakerAddr, amount);
         emit StakerData         (stakerAddr, st.stakedAmount);
@@ -303,13 +327,14 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
 
             if(previousStake < 1e18 && previousStake + amount >= 1e18) totalStakers++;
             totalStaked            += amount;
-            if(st.isActive) {
-                totalStakedForTally     += amount;
-            }
             st.stakedAmount        += amount;
             st.unstakingAmount      = 0;
             st.unstakingStartTime   = 0;
-
+            if(st.isActive) {
+                totalStakedForTally     += amount;
+                _updateStakedCheckpoint(stakerAddr, st.stakedAmount);
+            }
+            
             emit UnstakeCancelled (stakerAddr, amount);
         }    
     }
@@ -341,6 +366,7 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
         if (!st.isActive) {
             st.isActive = true;
             totalStakedForTally += st.stakedAmount;
+            _updateStakedCheckpoint(stakerAddr, st.stakedAmount);
 
             emit StakerReactivated(stakerAddr, st.stakedAmount);
         }
@@ -352,6 +378,7 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
         if (st.isActive) {
             st.isActive = false;
             totalStakedForTally -= st.stakedAmount;
+            _updateStakedCheckpoint(stakerAddr, 0);
 
             emit StakerDeactivated(stakerAddr, st.stakedAmount);
         }
@@ -412,6 +439,66 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
 
                 emit AutoUnstaked(stakerAddr, st.stakedAmount);
             }
+        }
+
+        //clean stake check points 
+        _cleanStakedCheckpoints(stakerAddr);
+    }
+
+    function _updateStakedCheckpoint(address stakerAddr, uint256 newAmount) internal {
+        StakeCheckpoint[] storage checkpoints = stakedCheckpoints[stakerAddr];
+        uint256 len = checkpoints.length;
+        
+        if (len > 0 && checkpoints[len - 1].blockNumber == block.number) {
+            // Update the existing checkpoint in the current block.
+            checkpoints[len - 1].amount = newAmount;
+        } else {
+            // Create a new checkpoint for the current block.
+            checkpoints.push(StakeCheckpoint({
+                blockNumber: block.number,
+                amount: newAmount
+            }));
+        }
+    }
+
+    function _cleanStakedCheckpoints(address stakerAddr) internal {
+        StakeCheckpoint[] storage checkpoints = stakedCheckpoints[stakerAddr];
+        uint256 len = checkpoints.length;
+        if (len == 0) return;
+        
+        uint256 thresholdBlocks = (30 * 24 * 3600) / 2; // 2 sec block time
+        
+        // Find the first checkpoint that is recent (within 30 days).
+        uint256 firstRecent = len;
+        for (uint256 i = 0; i < len; i++) {
+            if (block.number - checkpoints[i].blockNumber <= thresholdBlocks) {
+                firstRecent = i;
+                break;
+            }
+        }
+        
+        uint256 startIndex;
+        if (firstRecent == 0) {
+            // All checkpoints are recent – nothing to clean.
+            return;
+        } else if (firstRecent == len) {
+            // All are older than 30 days, so keep only the last one.
+            startIndex = len - 1;
+        } else {
+            // Otherwise, keep the last checkpoint that is older than 30 days.
+            startIndex = firstRecent - 1;
+        }
+        
+        // Calculate the new length (checkpoints to keep).
+        uint256 newLength = len - startIndex;
+        
+        // Shift the checkpoints we want to keep to the beginning.
+        for (uint256 j = 0; j < newLength; j++) {
+            checkpoints[j] = checkpoints[startIndex + j];
+        }
+        // Remove the excess entries from the end.
+        for (uint256 j = 0; j < (len - newLength); j++) {
+            checkpoints.pop();
         }
     }
 
@@ -540,8 +627,10 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
         totalStakedForTally   += amount;
         st.stakedAmount       += amount;
         st.lastRewardClaimTime = block.timestamp;   // Start accruing rewards from now (edge case: old staker that restakes from 0)
+        _updateStakedCheckpoint(msg.sender, st.stakedAmount);
 
         cloudStakeVault.deposit(msg.sender, amount);
+
 
         emit Staked     (msg.sender, amount);
         emit StakerData (msg.sender, st.stakedAmount);
@@ -637,5 +726,5 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
     }
 
     // storage gap for upgrade safety, prevents storage conflicts in future versions
-    uint256[50] private __gap;
+    uint256[49] private __gap;
 }
