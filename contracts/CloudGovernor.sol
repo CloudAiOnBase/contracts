@@ -8,12 +8,9 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/governance/Governor.sol";
 import "@openzeppelin/contracts/governance/extensions/GovernorCountingSimple.sol";
 
-interface ICloudStakeVault {
-    function getDepositedBalance (address user)                     external view returns (uint256);
-}
-
 interface ICloudStaking {
     function totalStakedForTally()                                  external view returns (uint256);
+    function userStakedForTally(address user, uint256 blockNumber)  external view returns (uint256);
 }
 
 contract CloudGovernor is 
@@ -21,38 +18,38 @@ contract CloudGovernor is
     GovernorCountingSimple
 {
     IERC20              public cloudToken;
-    ICloudStakeVault    public cloudStakeVault;
     ICloudStaking       public cloudStaking;
 
     uint256 public constant BLOCK_TIME = 2; // Block time in seconds
     uint256 private votingPeriodValue;
     uint256 private proposalThresholdValue;
     uint256 private quorumValue;
-
-    mapping(uint256 => uint256) private _quorumSnapshotByBlock;
-
+    uint256[] public proposalIds;
+    
     struct ProposalWalletCount {
         uint256 againstWallets;
         uint256 forWallets;
         uint256 abstainWallets;
     }
-
+    struct ProposalMetadata {
+        string title;
+        string description;
+    }
+    mapping(uint256 => uint256)             private _quorumSnapshotByBlock;
+    mapping(uint256 => bool)                public allProposals;
     mapping(uint256 => ProposalWalletCount) private _proposalWalletCounts;
+    mapping(address => uint256)             private _lastActivityTime;
 
 
-    event StakeVaultContractAddressUpdated  (address oldCloudStakeVault, address newCloudStakeVault);
+
+    mapping(uint256 => ProposalMetadata) private _proposalsMetadata;
+
     event StakingContractAddressUpdated     (address oldCloudStaking, address newCloudStaking);
     event GovernanceParamUpdated            (GovernanceParam param, uint256 newValue);
 
-    constructor(
-        address _cloudToken,
-        address _cloudStakeVault,
-        address _cloudStaking
-    )
-        Governor("CloudGovernor")
+    constructor(address _cloudToken, address _cloudStaking)  Governor("CloudGovernor")
     {
         require(_cloudToken      != address(0), "Invalid token address");
-        require(_cloudStakeVault != address(0), "Invalid stake vault address");
         require(_cloudStaking    != address(0), "Invalid staking address");
 
         votingPeriodValue      = 7 * 24 * 3600;      // 7 days in seconds
@@ -60,7 +57,6 @@ contract CloudGovernor is
         quorumValue            = 10;                 // 10% quorum
 
         cloudToken      = IERC20(_cloudToken);
-        cloudStakeVault = ICloudStakeVault(_cloudStakeVault);
         cloudStaking    = ICloudStaking(_cloudStaking);
     }
 
@@ -86,7 +82,7 @@ contract CloudGovernor is
     }
 
     function votingDelay()                              public pure override returns (uint256) {
-        return 1; // 1 block delay
+        return 3600 / BLOCK_TIME; // 1-hour delay to allow for verification by the proposer
     }
 
     function votingPeriod()                             public view override returns (uint256) {
@@ -97,15 +93,8 @@ contract CloudGovernor is
         return proposalThresholdValue;           // Minimum votes required to create a proposal
     }
 
-    // Override quorum() to return the saved quorum based on the snapshot block,
-    // or compute the current quorum if no snapshot was saved.
-    function quorum(uint256 blockNumber)                public view override returns (uint256) {
-        uint256 savedQuorum = _quorumSnapshotByBlock[blockNumber];
-
-        if (savedQuorum != 0) {
-             return savedQuorum;
-        }
-        return _computeQuorum();
+    function quorum(uint256 blockNumber)                public view override returns (uint256) {    
+        return _quorumSnapshotByBlock[blockNumber];
     }
 
     function getGovernanceParams()                      external view returns (
@@ -119,35 +108,53 @@ contract CloudGovernor is
     }
 
     function proposalWalletCounts(uint256 proposalId)   public view returns (uint256 againstWallets, uint256 forWallets, uint256 abstainWallets) {
+
         ProposalWalletCount storage count = _proposalWalletCounts[proposalId];
+
         return (count.againstWallets, count.forWallets, count.abstainWallets);
+    }
+
+    function getLastActivityTime(address user)          external view returns (uint256) {
+        return _lastActivityTime[user];
+    }
+
+    function getProposalsPaginated(uint256 start, uint256 count) external view returns (uint256[] memory) {
+        require(start < proposalIds.length, "Start index out of bounds");
+
+        uint256 end = start + count;
+        if (end > proposalIds.length) {
+            end = proposalIds.length;
+        }
+
+        uint256[] memory paginatedProposals = new uint256[](end - start);
+        for (uint256 i = start; i < end; i++) {
+            paginatedProposals[i - start] = proposalIds[i];
+        }
+
+        return paginatedProposals;
+    }
+
+    function getProposalMetadata(uint256 proposalId)   public view  returns (string memory title, string memory description)
+    {
+        ProposalMetadata storage metadata = _proposalsMetadata[proposalId];
+        return (metadata.title, metadata.description);
     }
 
     // ============================================
     // INTERNAL FUNCTIONS
     // ============================================
 
-    function _getVotes(address account, uint256, bytes memory /*params*/)   internal view override(Governor) returns (uint256)
+    function _getVotes          (address account, uint256 blockNumber, bytes memory /*params*/)     internal view override(Governor) returns (uint256)
     {
-       return cloudStakeVault.getDepositedBalance(account);
+       return cloudStaking.userStakedForTally(account, blockNumber);
     }
 
-    function _computeQuorum() internal view returns (uint256) {
-        uint256 totalVotes;
-        try cloudStaking.totalStakedForTally() returns (uint256 stakingVotes) {
-            totalVotes = stakingVotes;
-        } catch {
-            // Fallback to using total balance in StakeVault if staking contract call fails
-            totalVotes = cloudToken.balanceOf(address(cloudStakeVault));
-        }
+    function _computeQuorum     ()                                                                  internal view returns (uint256) {
 
-        uint256 vaultBalance = cloudToken.balanceOf(address(cloudStakeVault));
-
-        if (totalVotes > vaultBalance) {
-            totalVotes = vaultBalance;
-        }
+        uint256 totalVotes = cloudStaking.totalStakedForTally();
 
         uint256 calculatedQuorum = (totalVotes * quorumValue) / 100;
+
         return calculatedQuorum > 0 ? calculatedQuorum : 1;
     }
 
@@ -159,8 +166,9 @@ contract CloudGovernor is
         bytes memory params
     ) internal override(Governor, GovernorCountingSimple) returns (uint256) { // Ensure it returns uint256
 
-        // Call the parent function and store the return value
-        uint256 countedWeight = super._countVote(proposalId, account, support, totalWeight, params); 
+        _lastActivityTime[account] = block.timestamp;  // Record the user's activity time upon voting.
+
+        uint256 countedWeight = super._countVote(proposalId, account, support, totalWeight, params); // Call the parent function and store the return value
 
         // Increment respective wallet counts (each wallet votes only once)
         if (support == 0) {
@@ -171,26 +179,24 @@ contract CloudGovernor is
             _proposalWalletCounts[proposalId].abstainWallets++;
         }
 
-        // Return the counted weight to match the expected return type
-        return countedWeight;
+        return countedWeight; // Return the counted weight to match the expected return type
+    }
+
+    // Internal function to allow proposeWithMetadata() to call propose()
+    function _proposeInternal(
+        address[] memory targets,
+        uint256[] memory values,
+        bytes[] memory calldatas,
+        string memory description
+    ) internal returns (uint256) {
+        return super.propose(targets, values, calldatas, description);
     }
 
     // ============================================
     // PUBLIC FUNCTIONS
     // ============================================
 
-    function setStakeVaultContract  (address _newCloudStakeVault)                           external onlyGovernance {
-        require(_newCloudStakeVault != address(0),                  "Invalid address");
-        require(_newCloudStakeVault != address(cloudStakeVault),    "Same address already set");
-        require(_newCloudStakeVault.code.length > 0,                "Not a contract");
-
-        address oldCloudStakeVault     = address(cloudStakeVault);
-        cloudStakeVault                = ICloudStakeVault(_newCloudStakeVault);
-
-        emit StakeVaultContractAddressUpdated(oldCloudStakeVault, _newCloudStakeVault);
-    }
-
-    function setStakingContract     (address _newCloudStaking)                              external onlyGovernance {
+    function setStakingContract         (address _newCloudStaking)                                  external onlyGovernance {
         require(_newCloudStaking != address(0),               "Invalid address");
         require(_newCloudStaking != address(cloudStaking),    "Same address already set");
         require(_newCloudStaking.code.length > 0,             "Not a contract");
@@ -207,7 +213,7 @@ contract CloudGovernor is
      *             Each key is a uint8 corresponding to a value in the GovernanceParam enum.
      * @param values An array of new values for the corresponding parameters.
      */
-    function updateGovernanceParameters(uint8[] calldata keys, uint256[] calldata values)   external onlyGovernance {
+    function updateGovernanceParameters (uint8[] calldata keys, uint256[] calldata values)          external onlyGovernance {
 
         require(keys.length == values.length, "Array lengths mismatch");
 
@@ -244,18 +250,43 @@ contract CloudGovernor is
         }
     }
 
-    // Override propose() so that when a proposal is created, we capture the quorum
-    function propose(
+    function proposeWithMetadata(
         address[] memory targets,
         uint256[] memory values,
         bytes[] memory calldatas,
+        string memory title,
         string memory description
-    ) public override returns (uint256) {
-        uint256 proposalId                      = super.propose(targets, values, calldatas, description);
+    ) public returns (uint256) {
+        require(bytes(title).length > 0, "Title cannot be empty");
+        require(bytes(title).length <= 100, "Title is too long (max 100 characters)");
+        require(bytes(description).length > 0, "Description cannot be empty");
+        require(bytes(description).length <= 2000, "Description is too long (max 2000 characters)");
+
+        _lastActivityTime[msg.sender] = block.timestamp; // Record the proposer's activity time.
+
+        uint256 proposalId                      = _proposeInternal(targets, values, calldatas, description);
+
         uint256 snapshotBlock                   = proposalSnapshot(proposalId);             // Get the snapshot block for this proposal (Governor's internal snapshot)
         _quorumSnapshotByBlock[snapshotBlock]   = _computeQuorum();                         // Save the current quorum value for that snapshot block.
 
+        proposalIds.push(proposalId); // Track proposals
+        allProposals[proposalId] = true;
+        _proposalsMetadata[proposalId] = ProposalMetadata({ // Store proposal metadata
+            title: title,
+            description: description
+        });
+
         return proposalId;
+    }
+
+    // Override propose() to block direct public calls
+    function propose(
+        address[] memory ,
+        uint256[] memory ,
+        bytes[] memory,
+        string memory 
+    ) public pure override returns (uint256) {
+        revert("Use proposeWithMetadata() instead");
     }
 
 }
