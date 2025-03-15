@@ -25,9 +25,16 @@ async function main() {
     
     // Upgrade the contract
     const upgradedCloudStaking = await hre.upgrades.upgradeProxy(cloudStakingProxyAddress, CloudStakingV2);
-
     await upgradedCloudStaking.waitForDeployment();
     console.log("CloudStaking upgraded successfully!");
+
+
+    // Call initializeV2 to set the new state variable
+    const XXcloudGovernorAddress = "0xYourCloudGovernorAddress"; // Replace with the actual address
+    console.log("Initializing V2 with CloudGovernor address:", cloudGovernorAddress);
+    const tx = await upgradedCloudStaking.initializeV2(cloudGovernorAddress);
+    await tx.wait();
+    console.log("initializeV2() executed successfully!");
 }
 
 main().catch((error) => {

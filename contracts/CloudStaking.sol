@@ -39,6 +39,10 @@ interface ICloudUtils {
     function getCirculatingSupply()                              external view returns (uint256);
 }
 
+interface ICloudGovernor {
+    function getLastActivityTime  (address user)                 external view returns (uint256);
+}
+
 contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, ReentrancyGuardUpgradeable, PausableUpgradeable {
     using SafeERC20 for IERC20;
 
@@ -81,6 +85,8 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
     }
     mapping(address => StakeCheckpoint[]) private stakedCheckpoints;
 
+    ICloudGovernor      public cloudGovernor;
+
     event Staked                    (address indexed staker, uint256 stakedAmount);
     event RewardsClaimed            (address indexed staker, uint256 rewards);
     event Unstaking                 (address indexed staker, uint256 amount);
@@ -114,6 +120,13 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
         cloudStakeVault     = ICloudStakeVault(_cloudStakeVault);
         cloudRewardPool     = ICloudRewardPool(_cloudRewardPool);
         cloudUtils          = ICloudUtils(_cloudUtils);
+    }
+
+    /// @notice New initializer for the upgraded version that includes the cloudGovernor.
+    function initializeV2(address _cloudGovernor) public reinitializer(2) {
+        require(_cloudGovernor      != address(0), "Invalid governor address");
+
+        cloudGovernor = ICloudGovernor(_cloudGovernor);
     }
 
     // Enum to represent each staking parameter.
@@ -247,9 +260,9 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
         return (stakerOuts, amounts);
     }
 
-    function userStakedForTally(address user, uint256 blockNumber)  external view returns (uint256) {
+    function userStakedForTally(address stakerAddr, uint256 blockNumber)  external view returns (uint256) {
 
-        StakeCheckpoint[] storage checkpoints = stakedCheckpoints[user];
+        StakeCheckpoint[] storage checkpoints = stakedCheckpoints[stakerAddr];
 
         uint256 length = checkpoints.length;
         if (length == 0) {
@@ -334,7 +347,7 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
                 totalStakedForTally     += amount;
                 _updateStakedCheckpoint(stakerAddr, st.stakedAmount);
             }
-            
+
             emit UnstakeCancelled (stakerAddr, amount);
         }    
     }
@@ -429,8 +442,19 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
         if(st.stakedAmount > 0)
         {
             // ignore in tally
-            if(st.isActive && currentTimestamp >= st.lastActivityTime + governanceInactivityThreshold) {
-                _deactivateStaker(stakerAddr);
+            if(st.isActive) {
+                if(currentTimestamp >= st.lastActivityTime + governanceInactivityThreshold) {
+
+                    uint256 lastGovernorActivityTime = cloudGovernor.getLastActivityTime(stakerAddr); // Fetch last recorded activity from the governor
+
+                    if (lastGovernorActivityTime > st.lastActivityTime) { // Update last activity time if governance shows a more recent activity
+                        st.lastActivityTime = lastGovernorActivityTime;
+                    }
+
+                    if(currentTimestamp >= st.lastActivityTime + governanceInactivityThreshold) {  // If still inactive after checking governance, deactivate the staker
+                        _deactivateStaker(stakerAddr);
+                    }
+                }
             }
 
             // auto unstake
@@ -461,7 +485,7 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
         }
     }
 
-    function _cleanStakedCheckpoints(address stakerAddr) internal {
+    function _cleanStakedCheckpoints(address stakerAddr)            internal {
         StakeCheckpoint[] storage checkpoints = stakedCheckpoints[stakerAddr];
         uint256 len = checkpoints.length;
         if (len == 0) return;
@@ -726,5 +750,5 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
     }
 
     // storage gap for upgrade safety, prevents storage conflicts in future versions
-    uint256[49] private __gap;
+    uint256[48] private __gap;
 }
