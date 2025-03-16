@@ -20,11 +20,11 @@ contract CloudGovernor is
     IERC20              public cloudToken;
     ICloudStaking       public cloudStaking;
 
-    uint256 public constant BLOCK_TIME = 2; // Block time in seconds
-    uint256 private votingPeriodValue;
-    uint256 private proposalThresholdValue;
-    uint256 private quorumValue;
-    uint256[] public proposalIds;
+    uint256   public constant BLOCK_TIME = 2; // Block time in seconds
+    uint256   private votingPeriodValue;
+    uint256   private proposalThresholdValue;
+    uint256   private quorumValue;
+    uint256[] public  proposalIds;
     
     struct ProposalWalletCount {
         uint256 againstWallets;
@@ -36,13 +36,10 @@ contract CloudGovernor is
         string description;
     }
     mapping(uint256 => uint256)             private _quorumSnapshotByBlock;
-    mapping(uint256 => bool)                public allProposals;
+    mapping(uint256 => bool)                public  allProposals;
     mapping(uint256 => ProposalWalletCount) private _proposalWalletCounts;
     mapping(address => uint256)             private _lastActivityTime;
-
-
-
-    mapping(uint256 => ProposalMetadata) private _proposalsMetadata;
+    mapping(uint256 => ProposalMetadata)    private _proposalsMetadata;
 
     event StakingContractAddressUpdated     (address oldCloudStaking, address newCloudStaking);
     event GovernanceParamUpdated            (GovernanceParam param, uint256 newValue);
@@ -151,7 +148,7 @@ contract CloudGovernor is
 
     function _computeQuorum     ()                                                                  internal view returns (uint256) {
 
-        uint256 totalVotes = cloudStaking.totalStakedForTally();
+        uint256 totalVotes       = cloudStaking.totalStakedForTally();
 
         uint256 calculatedQuorum = (totalVotes * quorumValue) / 100;
 
@@ -257,24 +254,25 @@ contract CloudGovernor is
         string memory title,
         string memory description
     ) public returns (uint256) {
-        require(bytes(title).length > 0, "Title cannot be empty");
-        require(bytes(title).length <= 100, "Title is too long (max 100 characters)");
-        require(bytes(description).length > 0, "Description cannot be empty");
-        require(bytes(description).length <= 2000, "Description is too long (max 2000 characters)");
-
-        _lastActivityTime[msg.sender] = block.timestamp; // Record the proposer's activity time.
+        require(bytes(title).length > 0,            "Title cannot be empty");
+        require(bytes(title).length <= 100,         "Title is too long (max 100 characters)");
+        require(bytes(description).length > 0,      "Description cannot be empty");
+        require(bytes(description).length <= 2000,  "Description is too long (max 2000 characters)");
 
         uint256 proposalId                      = _proposeInternal(targets, values, calldatas, description);
 
         uint256 snapshotBlock                   = proposalSnapshot(proposalId);             // Get the snapshot block for this proposal (Governor's internal snapshot)
         _quorumSnapshotByBlock[snapshotBlock]   = _computeQuorum();                         // Save the current quorum value for that snapshot block.
 
-        proposalIds.push(proposalId); // Track proposals
-        allProposals[proposalId] = true;
-        _proposalsMetadata[proposalId] = ProposalMetadata({ // Store proposal metadata
-            title: title,
-            description: description
+         // Track proposals &  Store proposal metadata
+        proposalIds.push(proposalId);
+        allProposals[proposalId]        = true;
+        _proposalsMetadata[proposalId]  = ProposalMetadata({
+            title:          title,
+            description:    description
         });
+
+        _lastActivityTime[msg.sender] = block.timestamp; // Record the proposer's activity time.
 
         return proposalId;
     }

@@ -719,6 +719,66 @@ describe("CloudStaking", function () {
       expect(stakerInfo.isActive).to.be.false;
     });
 
+    it("should update lastActivityTime from cloudGovernor before deactivating staker", async function () {
+        await cloudToken.transfer(user1.getAddress(), ethers.parseEther("60000"));
+        await cloudToken.connect(user1).approve(cloudStakeVault.getAddress(), ethers.parseEther("60000"));      
+        await cloudStaking.connect(user1).stake(ethers.parseEther("60000"));
+        let stakerInfo = await cloudStaking.stakers(user1.getAddress());
+        expect(stakerInfo.isActive).to.be.true;
+
+        // Advance time beyond the governance inactivity threshold
+        await network.provider.send("evm_increaseTime", [params.governanceInactivityThreshold + 100]);
+        await network.provider.send("evm_mine"); // Mine a new block
+        const title       = "Proposal - Unauthorized Cancellation";
+        const description = "This proposal ensures only authorized users can cancel.";
+        const targets     = [await cloudGovernor.getAddress()];
+        const values      = [0];
+        const calldatas   = [cloudGovernor.interface.encodeFunctionData("votingPeriod")];
+        const tx          = await cloudGovernor.connect(user1).proposeWithMetadata(targets, values, calldatas, title, description);
+        const receipt     = await tx.wait();
+        const proposalId  = receipt.logs[0].args.proposalId;
+
+        // Handle inactivity
+        await cloudStaking.handleInactivityOne(user1.getAddress());
+
+        // Fetch updated staker info
+        stakerInfo = await cloudStaking.stakers(user1.getAddress());
+
+        // Ensure lastActivityTime has been updated from cloudGovernor
+        expect(stakerInfo.isActive).to.be.true; // Should remain active since activity was found in cloudGovernor
+    });
+
+
+  });
+
+  describe("Snapshots", function () {
+    it("should remove old checkpoints but keep recent ones", async function () {
+        await cloudToken.transfer(user1.getAddress(), ethers.parseEther("6000"));
+        await cloudToken.connect(user1).approve(cloudStakeVault.getAddress(), ethers.parseEther("6000"));      
+        await cloudStaking.connect(user1).stake(ethers.parseEther("5000"));
+
+        let blockNumber = await ethers.provider.getBlockNumber();
+
+        // Simulate multiple checkpoints over time
+        for (let i = 0; i < 5; i++) {
+            await ethers.provider.send("hardhat_mine", ["0x13C680"]); // Mine ~30 days of blocks
+            await cloudStaking.connect(user1).stake(ethers.parseEther("1"));
+        }
+
+        // Print checkpoints before cleanup
+        let stakeCheckpoints = await cloudStaking.getStakedCheckpoints(user1.getAddress());
+        //console.log("Checkpoints before cleanup:", stakeCheckpoints);
+
+        // Trigger cleanup function
+        await cloudStaking.handleInactivityOne(user1.getAddress());
+
+        // Fetch checkpoints after cleanup
+        stakeCheckpoints = await cloudStaking.getStakedCheckpoints(user1.getAddress());
+        //console.log("Checkpoints after cleanup:", stakeCheckpoints);
+
+        expect(stakeCheckpoints.length).to.be.lessThanOrEqual(2);
+    });
+
   });
 
   describe("Views", function () {

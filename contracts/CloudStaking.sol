@@ -277,6 +277,11 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
         return 0; // If no checkpoint exists for a block <= blockNumber
     }
 
+    function getStakedCheckpoints(address user) external view returns (StakeCheckpoint[] memory) {
+        return stakedCheckpoints[user];
+    }
+
+
     // ============================================
     // INTERNAL FUNCTIONS
     // ============================================
@@ -748,6 +753,7 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
     function setForceFailTest(uint256 _fail)                                            external onlyOwner{
         forceFailTest = _fail;
     }
+
 
     // storage gap for upgrade safety, prevents storage conflicts in future versions
     uint256[48] private __gap;
