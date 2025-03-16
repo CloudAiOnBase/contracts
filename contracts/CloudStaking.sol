@@ -128,6 +128,16 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
         require(_cloudGovernor      != address(0), "Invalid governor address");
 
         cloudGovernor = ICloudGovernor(_cloudGovernor);
+
+        // Loop over all existing stakers and update their checkpoints.
+        uint256 stakersCount = stakerList.length;
+        for (uint256 i = 0; i < stakersCount; i++) {
+            address stakerAddr = stakerList[i];
+            // Retrieve staker data from storage
+            Staker storage st = stakers[stakerAddr];
+            // Update the checkpoint with the current staked amount.
+            _updateStakedCheckpoint(stakerAddr, st.stakedAmount);
+        }
     }
 
     // Enum to represent each staking parameter.
