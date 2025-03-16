@@ -76,10 +76,10 @@ describe("CloudGovernor", function () {
 
     // Set initial staking parameters for all tests
     params = {
-      minStakeAmount: ethers.parseEther("100"),
-      cooldown: 7 * 24 * 60 * 60, // 7 days in seconds
-      governanceInactivityThreshold: 365 * 24 * 60 * 60, // 1 year in seconds
-      autoUnstakePeriod: 3 * 365 * 24 * 60 * 60, // 3 years in seconds
+      minStakeAmount: 100,
+      cooldown: 7, // 7 days
+      governanceInactivityThreshold: 365, // 1 year
+      autoUnstakePeriod: 3 * 365, // 3 years
       aprMin: 4, // 3% APR
       aprMax: 10, // 10% APR
       stakedCircSupplyMin: 10, // 10% min staked supply

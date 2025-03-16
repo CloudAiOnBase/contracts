@@ -50,8 +50,8 @@ contract CloudGovernor is
         require(_cloudStaking    != address(0), "Invalid staking address");
 
         votingPeriodValue      = 7 * 24 * 3600;      // 7 days in seconds
-        proposalThresholdValue = 10_000 * 10**18;      // 10,000 CLOUD in wei
-        quorumValue            = 10;                 // 10% quorum
+        proposalThresholdValue = 10_000 * 1e18;      // 10,000 CLOUD in wei
+        quorumValue            = 33;                 // 33% quorum
 
         cloudToken      = IERC20(_cloudToken);
         cloudStaking    = ICloudStaking(_cloudStaking);
@@ -61,7 +61,7 @@ contract CloudGovernor is
     enum GovernanceParam {
         VotingPeriodValue,              // 0  in days    example: 5
         ProposalThresholdValue,         // 1  in CLOUD   example: 10,000 
-        QuorumValue                     // 2  in %       example: 10
+        QuorumValue                     // 2  in %       example: 33
     }
 
     // ============================================
@@ -79,7 +79,7 @@ contract CloudGovernor is
     }
 
     function votingDelay()                              public pure override returns (uint256) {
-        return 3600 / BLOCK_TIME; // 1-hour delay to allow for verification by the proposer
+        return 3600 / BLOCK_TIME;                   // 1-hour delay to allow for verification by the proposer
     }
 
     function votingPeriod()                             public view override returns (uint256) {
@@ -87,7 +87,7 @@ contract CloudGovernor is
     }
 
     function proposalThreshold()                        public view override returns (uint256) {
-        return proposalThresholdValue;           // Minimum votes required to create a proposal
+        return proposalThresholdValue;              // Minimum votes required to create a proposal
     }
 
     function quorum(uint256 blockNumber)                public view override returns (uint256) {    
@@ -99,8 +99,8 @@ contract CloudGovernor is
         uint256 _proposalThresholdValue,
         uint256 _quorumValue
     ) {
-        _votingPeriodValue              = votingPeriodValue         / 24 / 3600;
-        _proposalThresholdValue         = proposalThresholdValue    / 10**18;
+        _votingPeriodValue              = votingPeriodValue         / (24 * 3600);
+        _proposalThresholdValue         = proposalThresholdValue    / 1e18;
         _quorumValue                    = quorumValue;
     }
 
@@ -116,6 +116,7 @@ contract CloudGovernor is
     }
 
     function getProposalsPaginated(uint256 start, uint256 count) external view returns (uint256[] memory) {
+
         require(start < proposalIds.length, "Start index out of bounds");
 
         uint256 end = start + count;
@@ -150,9 +151,9 @@ contract CloudGovernor is
 
         uint256 totalVotes       = cloudStaking.totalStakedForTally();
 
-        uint256 calculatedQuorum = (totalVotes * quorumValue) / 100;
+        uint256 calculatedQuorum = totalVotes * quorumValue / 100;
 
-        return calculatedQuorum > 0 ? calculatedQuorum : 1;
+        return calculatedQuorum > 0 ? calculatedQuorum : 1; // safety
     }
 
     function _countVote(
@@ -162,8 +163,6 @@ contract CloudGovernor is
         uint256 totalWeight, // Ensure it matches OpenZeppelin's function signature
         bytes memory params
     ) internal override(Governor, GovernorCountingSimple) returns (uint256) { // Ensure it returns uint256
-
-        _lastActivityTime[account] = block.timestamp;  // Record the user's activity time upon voting.
 
         uint256 countedWeight = super._countVote(proposalId, account, support, totalWeight, params); // Call the parent function and store the return value
 
@@ -175,6 +174,8 @@ contract CloudGovernor is
         } else if (support == 2) {
             _proposalWalletCounts[proposalId].abstainWallets++;
         }
+
+        _lastActivityTime[account] = block.timestamp;  // Record the user's activity time upon voting.
 
         return countedWeight; // Return the counted weight to match the expected return type
     }
@@ -230,7 +231,7 @@ contract CloudGovernor is
                 require(values[i] > 0,                                          "ProposalThresholdValue must be positive");
                 require(values[i] <= 1_000_000,                                 "ProposalThresholdValue must be <= 1,000,000");
 
-                proposalThresholdValue = values[i] * 10**18;
+                proposalThresholdValue = values[i] * 1e18;
                 emit GovernanceParamUpdated(param, values[i]);
 
 
@@ -261,6 +262,7 @@ contract CloudGovernor is
 
         uint256 proposalId                      = _proposeInternal(targets, values, calldatas, description);
 
+        // Snapshot Quorum
         uint256 snapshotBlock                   = proposalSnapshot(proposalId);             // Get the snapshot block for this proposal (Governor's internal snapshot)
         _quorumSnapshotByBlock[snapshotBlock]   = _computeQuorum();                         // Save the current quorum value for that snapshot block.
 
