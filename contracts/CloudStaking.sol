@@ -203,26 +203,27 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
     }
 
     function getStakingParams()                                     external view returns (
-        uint256 _minStakeAmount,
-        uint256 _cooldown,
-        uint256 _governanceInactivityThreshold,
-        uint256 _autoUnstakePeriod,
-        uint256 _aprMin,
-        uint256 _aprMax,
-        uint256 _stakedCircSupplyMin,
-        uint256 _stakedCircSupplyMax,
-        uint256 _maintenanceBatchSize
+        uint32 _minStakeAmount,  // Use uint32 instead of uint256
+        uint16 _cooldown,
+        uint16 _governanceInactivityThreshold,
+        uint16 _autoUnstakePeriod,
+        uint8 _aprMin,
+        uint8 _aprMax,
+        uint8 _stakedCircSupplyMin,
+        uint8 _stakedCircSupplyMax,
+        uint8 _maintenanceBatchSize
     ) {
-        _minStakeAmount                 = minStakeAmount;
-        _cooldown                       = cooldown;
-        _governanceInactivityThreshold  = governanceInactivityThreshold;
-        _autoUnstakePeriod              = autoUnstakePeriod;
-        _aprMin                         = aprMin;
-        _aprMax                         = aprMax;
-        _stakedCircSupplyMin            = stakedCircSupplyMin;
-        _stakedCircSupplyMax            = stakedCircSupplyMax;
-        _maintenanceBatchSize           = maintenanceBatchSize;
+        _minStakeAmount                 = uint32(minStakeAmount / 1e18);
+        _cooldown                       = uint16(cooldown / (24 * 3600));
+        _governanceInactivityThreshold  = uint16(governanceInactivityThreshold / (24 * 3600));
+        _autoUnstakePeriod              = uint16(autoUnstakePeriod / (24 * 3600));
+        _aprMin                         = uint8(aprMin);
+        _aprMax                         = uint8(aprMax);
+        _stakedCircSupplyMin            = uint8(stakedCircSupplyMin);
+        _stakedCircSupplyMax            = uint8(stakedCircSupplyMax);
+        _maintenanceBatchSize           = uint8(maintenanceBatchSize);
     }
+
 
     function getStakersData(address[] memory stakerAddresses)       external view returns (uint256[] memory stakedAmounts, bool[] memory isActives) {
         uint256 length      = stakerAddresses.length;
@@ -551,27 +552,25 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
         for (uint256 i = 0; i < keys.length; i++) {
             if (keys[i] == uint8(StakingParam.MinStakeAmount)) {
                 require(values[i] > 0,                          "minStakeAmount must be a positive integer");
+                 require(values[i] <= 100000,                   "minStakeAmount must be less than 100,000 CLOUD"); // safety
 
-                minStakeAmount = values[i];
+                minStakeAmount = values[i] * 1e18;
 
             } else if (keys[i] == uint8(StakingParam.Cooldown)) {
                 require(values[i] > 0,                          "Cooldown must be positive");
-                require(values[i] % 1 days == 0,                "Cooldown must be in whole days");
-                require(values[i] <= 30 days,                   "Cooldown must be less than 30 days");
+                require(values[i] <= 30,                        "Cooldown must be less than 30 days"); // safety
 
-                cooldown = values[i];
+                cooldown = values[i] * 24 * 3600;
 
             } else if (keys[i] == uint8(StakingParam.GovernanceInactivityThreshold)) {
                 require(values[i] > 0,                          "GovernanceInactivityThreshold must be positive");
-                require(values[i] % 1 days == 0,                "GovernanceInactivityThreshold must be in whole days");
 
-                governanceInactivityThreshold = values[i];
+                governanceInactivityThreshold = values[i]  * 24 * 3600;
 
             } else if (keys[i] == uint8(StakingParam.AutoUnstakePeriod)) {
                 require(values[i] > 0,                          "AutoUnstakePeriod must be positive");
-                require(values[i] % 1 days == 0,                "AutoUnstakePeriod must be in whole days");
 
-                autoUnstakePeriod = values[i];
+                autoUnstakePeriod = values[i] * 24 * 3600;
 
             } else if (keys[i] == uint8(StakingParam.AprMin)) {
                 require(values[i] <= aprMax,                    "aprMin must be <= aprMax");
@@ -592,14 +591,13 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
                 stakedCircSupplyMin = values[i];
 
             } else if (keys[i] == uint8(StakingParam.StakedCircSupplyMax)) {
-                require(values[i] >  0,                         "stakedCircSupplyMax must be > 0");
-                require(values[i] > stakedCircSupplyMin,        "stakedCircSupplyMax must be > stakedCircSupplyMin");
+                require(values[i] >= stakedCircSupplyMin,       "stakedCircSupplyMax must be >= stakedCircSupplyMin");
                 require(values[i] <= 100,                       "stakedCircSupplyMax must be <= 100");
 
                 stakedCircSupplyMax = values[i];
 
             } else if (keys[i] == uint8(StakingParam.maintenanceBatchSize)) {
-                require(values[i] <= 100,                       "maintenanceBatchSize must be <= 100");
+                require(values[i] <= 100,                       "maintenanceBatchSize must be <= 100"); // safety
 
                 maintenanceBatchSize = values[i];
 

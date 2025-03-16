@@ -72,10 +72,10 @@ describe("CloudStaking", function () {
 
     // Set initial staking parameters for all tests
     params = {
-      minStakeAmount: ethers.parseEther("100"),
-      cooldown: 7 * 24 * 60 * 60, // 7 days in seconds
-      governanceInactivityThreshold: 365 * 24 * 60 * 60, // 1 year in seconds
-      autoUnstakePeriod: 3 * 365 * 24 * 60 * 60, // 3 years in seconds
+      minStakeAmount: 100, // 100 CLOUD
+      cooldown: 7, // 7 days 
+      governanceInactivityThreshold: 365, // 1 year 
+      autoUnstakePeriod: 3 * 365, // 3 years 
       aprMin: 4, // 3% APR
       aprMax: 10, // 10% APR
       stakedCircSupplyMin: 10, // 10% min staked supply
@@ -177,22 +177,22 @@ describe("CloudStaking", function () {
     });
 
     it("should allow only the owner to update staking parameters", async function () {
-      const minStakeAmount = ethers.parseEther("50");
+      const minStakeAmount = 50;
 
       await expect(
         cloudStaking.connect(nonOwner).updateStakingParameters([0], [minStakeAmount])
       ).to.be.reverted;
 
       await cloudStaking.updateStakingParameters([0], [minStakeAmount]);
-      expect(await cloudStaking.getStakingParams()).to.include(minStakeAmount);
+      expect(await cloudStaking.getStakingParams()).to.include(BigInt(minStakeAmount));
     });
 
     it("should allow the owner to set all staking parameters and retrieve them", async function () {
       const params = {
-        minStakeAmount: ethers.parseEther("1000"),
-        cooldown: 5 * 24 * 60 * 60, // 5 days in seconds
-        governanceInactivityThreshold: 30 * 24 * 60 * 60, // 30 days in seconds
-        autoUnstakePeriod: 60 * 24 * 60 * 60, // 60 days in seconds
+        minStakeAmount: 1000, // 1000 CLOUD 
+        cooldown: 5 , // 5 days
+        governanceInactivityThreshold: 30, // 30 days
+        autoUnstakePeriod: 60, // 60 days
         aprMin: 3, // 3% APR
         aprMax: 11, // 10% APR
         stakedCircSupplyMin: 11, // 10% min staked supply
@@ -233,12 +233,12 @@ describe("CloudStaking", function () {
     it("should allow users to stake tokens", async function () {
       await cloudToken.transfer(user1.getAddress(), ethers.parseEther("1000"));
       await cloudToken.connect(user1).approve(cloudStakeVault.getAddress(), ethers.parseEther("1000"));
-      await cloudStaking.connect(user1).stake(params.minStakeAmount);
+      await cloudStaking.connect(user1).stake(BigInt(params.minStakeAmount) * BigInt(1e18));
 
       expect(await cloudStaking.totalStakers()).to.equal(1);
-      expect(await cloudStaking.totalStaked()).to.equal(params.minStakeAmount);
+      expect(await cloudStaking.totalStaked()).to.equal(BigInt(params.minStakeAmount) * BigInt(1e18));
       let staker = await cloudStaking.stakers(user1.getAddress());
-      expect(staker.stakedAmount).to.equal(params.minStakeAmount);
+      expect(staker.stakedAmount).to.equal(BigInt(params.minStakeAmount) * BigInt(1e18));
     });
 
     it("should calculate and claim rewards correctly", async function () {
@@ -400,22 +400,22 @@ describe("CloudStaking", function () {
 
       await cloudToken.transfer(user1.getAddress(), ethers.parseEther("6000"));
       await cloudToken.connect(user1).approve(cloudStakeVault.getAddress(), ethers.parseEther("6000"));      
-      await cloudStaking.connect(user1).stake(params.minStakeAmount);
-      await cloudStaking.connect(user1).initiateUnstake(params.minStakeAmount);
+      await cloudStaking.connect(user1).stake(BigInt(params.minStakeAmount) * BigInt(1e18));
+      await cloudStaking.connect(user1).initiateUnstake(BigInt(params.minStakeAmount) * BigInt(1e18));
 
       let staker = await cloudStaking.stakers(user1.getAddress());
       expect(staker.stakedAmount).to.equal(0);
-      expect(staker.unstakingAmount).to.equal(params.minStakeAmount);
+      expect(staker.unstakingAmount).to.equal(BigInt(params.minStakeAmount) * BigInt(1e18));
     });
 
     it("should allow users to cancel unstaking", async function () {
       await cloudToken.transfer(user1.getAddress(), ethers.parseEther("6000"));
       await cloudToken.connect(user1).approve(cloudStakeVault.getAddress(), ethers.parseEther("6000"));      
-      await cloudStaking.connect(user1).stake(params.minStakeAmount);
+      await cloudStaking.connect(user1).stake(BigInt(params.minStakeAmount) * BigInt(1e18));
 
       await ethers.provider.send("evm_increaseTime", [10 * 86400]);
       await ethers.provider.send("evm_mine");
-      await cloudStaking.connect(user1).initiateUnstake(params.minStakeAmount);
+      await cloudStaking.connect(user1).initiateUnstake(BigInt(params.minStakeAmount) * BigInt(1e18));
 
 
       await ethers.provider.send("evm_increaseTime", [2 * 86400]);
@@ -424,18 +424,18 @@ describe("CloudStaking", function () {
       let staker = await cloudStaking.stakers(user1.getAddress());
 
       //console.log(staker);
-      expect(staker.stakedAmount).to.equal(params.minStakeAmount);
+      expect(staker.stakedAmount).to.equal(BigInt(params.minStakeAmount) * BigInt(1e18));
       expect(staker.unstakingAmount).to.equal(0);
     });
 
     it("should allow users to only claim unstaked tokens after cooldown", async function () {
       await cloudToken.transfer(user1.getAddress(), ethers.parseEther("6000"));
       await cloudToken.connect(user1).approve(cloudStakeVault.getAddress(), ethers.parseEther("6000"));      
-      await cloudStaking.connect(user1).stake(params.minStakeAmount);
+      await cloudStaking.connect(user1).stake(BigInt(params.minStakeAmount) * BigInt(1e18));
 
       await ethers.provider.send("evm_increaseTime", [10 * 86400]);
       await ethers.provider.send("evm_mine");
-      await cloudStaking.connect(user1).initiateUnstake(params.minStakeAmount - ethers.parseEther("1"));
+      await cloudStaking.connect(user1).initiateUnstake(BigInt(params.minStakeAmount) * BigInt(1e18) - ethers.parseEther("1"));
 
       await ethers.provider.send("evm_increaseTime", [1 * 86400]);
       await ethers.provider.send("evm_mine");
@@ -727,7 +727,7 @@ describe("CloudStaking", function () {
         expect(stakerInfo.isActive).to.be.true;
 
         // Advance time beyond the governance inactivity threshold
-        await network.provider.send("evm_increaseTime", [params.governanceInactivityThreshold + 100]);
+        await network.provider.send("evm_increaseTime", [params.governanceInactivityThreshold * 24 * 3600 + 100]);
         await network.provider.send("evm_mine"); // Mine a new block
         const title       = "Proposal - Unauthorized Cancellation";
         const description = "This proposal ensures only authorized users can cancel.";
