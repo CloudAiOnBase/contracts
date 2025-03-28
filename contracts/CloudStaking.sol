@@ -734,6 +734,8 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
 
         _reactivateStaker(msg.sender);
 
+         _claimRewards   (msg.sender); // Claiming rewards to preserve reward anti-rug logic.
+
         uint256 amountToClaim = st.unstakingAmount;
 
         st.unstakingAmount      = 0;
@@ -744,7 +746,7 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
         emit Unstaked   (msg.sender, amountToClaim);
         emit StakerData (msg.sender, st.stakedAmount);
 
-        //_updateLastActivity(msg.sender); // Intentionally disabled: breaks reward pool anti-rug detection since this function does not involve claiming rewards.
+        _updateLastActivity(msg.sender);
     }
 
     function recoverMistakenTokens(address _token, address _recipient, uint256 _amount) external onlyOwner {
