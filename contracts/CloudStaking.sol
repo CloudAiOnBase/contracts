@@ -327,8 +327,6 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
         require(amount > 0,                 "Amount must be > 0");
         require(amount <= st.stakedAmount,  "Insufficient staked balance");
 
-        _claimRewards(stakerAddr);  // Claim any pending rewards before modifying the stake balance.
-
         uint256 previousStake = st.stakedAmount;
 
         st.stakedAmount         -= amount;
@@ -477,7 +475,9 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
             if(currentTimestamp >= st.lastActivityTime + autoUnstakePeriod) {
                 uint256 amount = st.stakedAmount;
 
-                _initiateUnstake(stakerAddr, st.stakedAmount);
+                _claimRewards(stakerAddr); // Claim any pending rewards before modifying the stake balance.
+
+                _initiateUnstake(stakerAddr, st.stakedAmount); 
 
                 emit AutoUnstaked(stakerAddr, amount);
             }
@@ -697,6 +697,8 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
 
         _reactivateStaker   (msg.sender); // Reactivate staker if previously inactive
 
+        _claimRewards       (msg.sender); // Claim any pending rewards before modifying the stake balance.
+
         _initiateUnstake    (msg.sender, amount);
 
         _updateLastActivity (msg.sender);
@@ -717,7 +719,7 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
 
         _cancelUnstaking    (msg.sender);
 
-        _updateLastActivity (msg.sender);
+        _updateLastActivity (msg.sender); 
 
         _handleInactivity    (maintenanceBatchSize);
     }
@@ -742,7 +744,7 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
         emit Unstaked   (msg.sender, amountToClaim);
         emit StakerData (msg.sender, st.stakedAmount);
 
-        _updateLastActivity(msg.sender);
+        //_updateLastActivity(msg.sender); // Intentionally disabled: breaks reward pool anti-rug detection since this function does not involve claiming rewards.
     }
 
     function recoverMistakenTokens(address _token, address _recipient, uint256 _amount) external onlyOwner {

@@ -21,20 +21,20 @@ async function main() {
     console.log("Using CloudStaking proxy at:", cloudStakingProxyAddress);
 
     // Get the new implementation contract
-    const CloudStakingV2 = await hre.ethers.getContractFactory("CloudStaking");
+    const CloudStaking = await hre.ethers.getContractFactory("CloudStaking");
     
     // Upgrade the contract
-    const upgradedCloudStaking = await hre.upgrades.upgradeProxy(cloudStakingProxyAddress, CloudStakingV2);
+    const upgradedCloudStaking = await hre.upgrades.upgradeProxy(cloudStakingProxyAddress, CloudStaking);
     await upgradedCloudStaking.waitForDeployment();
     console.log("CloudStaking upgraded successfully!");
 
 
     // Call initializeV2 to set the new state variable
-    const XXcloudGovernorAddress = "0xYourCloudGovernorAddress"; // Replace with the actual address
-    console.log("Initializing V2 with CloudGovernor address:", cloudGovernorAddress);
-    const tx = await upgradedCloudStaking.initializeV2(cloudGovernorAddress);
-    await tx.wait();
-    console.log("initializeV2() executed successfully!");
+    //const XXcloudGovernorAddress = "0xYourCloudGovernorAddress"; // Replace with the actual address
+    //console.log("Initializing V2 with CloudGovernor address:", cloudGovernorAddress);
+    //const tx = await upgradedCloudStaking.initializeV2(cloudGovernorAddress);
+    //await tx.wait();
+    //console.log("initializeV2() executed successfully!");
 }
 
 main().catch((error) => {
