@@ -410,19 +410,21 @@ describe("CloudGovernor", function () {
       const oldQuorum = (await cloudGovernor.getGovernanceParams())[2]; // Quorum value
       const oldProposalThreshold = await cloudGovernor.proposalThreshold();
       const oldVotingPeriod = await cloudGovernor.votingPeriod();
+      const oldProposalDepositAmount = (await cloudGovernor.getGovernanceParams())[3]; 
 
       // New values to be proposed
       const newQuorum = 15; // Change quorum from 10% to 15%
       const newProposalThreshold = 20000; // 20,000 CLOUD
       const newVotingPeriod = 5; // Change voting period to 5 days
+      const newProposalDepositAmount = 20000; // 20,000 CLOUD
 
       // Encode function call for updating governance parameters
       const targets = [await cloudGovernor.getAddress()];
       const values = [0];
       const calldatas = [
         cloudGovernor.interface.encodeFunctionData("updateGovernanceParameters", [
-          [0, 1, 2], // Keys: VotingPeriodValue, ProposalThresholdValue, QuorumValue
-          [newVotingPeriod, newProposalThreshold, newQuorum], // New values
+          [0, 1, 2, 3], // Keys: VotingPeriodValue, ProposalThresholdValue, QuorumValue
+          [newVotingPeriod, newProposalThreshold, newQuorum, newProposalDepositAmount], // New values
         ])
       ];
       const description = "Update governance parameters (Voting period, Proposal Threshold, Quorum)";
@@ -448,11 +450,12 @@ describe("CloudGovernor", function () {
       await cloudGovernor.execute(targets, values, calldatas, descriptionHash);
 
       // Verify the new governance parameters
-      let [updatedVotingPeriod, updatedProposalThreshold, updatedQuorum] = await cloudGovernor.getGovernanceParams();
+      let [updatedVotingPeriod, updatedProposalThreshold, updatedQuorum, updatedProposalDepositAmount] = await cloudGovernor.getGovernanceParams();
 
       expect(updatedQuorum).to.equal(newQuorum);
       expect(updatedProposalThreshold).to.equal(newProposalThreshold);
       expect(updatedVotingPeriod).to.equal(newVotingPeriod); // Convert days to blocks
+      expect(updatedProposalDepositAmount).to.equal(newProposalDepositAmount);
     });
 
     it("should allow governance to change APR settings in the Staking contract", async function () {
@@ -1384,8 +1387,51 @@ describe("CloudGovernor", function () {
       expect(userBalanceAfter).to.equal(userBalanceBefore); // fully refunded
     });
 
+    it("should not refund deposit if veto threshold is met and prop rejected", async () => {
 
-    it("should not refund deposit if veto threshold is met", async () => {
+      await fundAndApproveProposalDeposit(cloudToken, cloudGovernor, user1);
+
+      const userBalanceBefore = await cloudToken.balanceOf(user1.getAddress());
+
+      //Encode the function call to release funds from VestingWallet
+      const targets     = [user1.address]; // or any contract address
+      const values      = [0];
+      const calldatas   = [ "0x" ]; // empty calldata
+      const description = "Release from the commFundVestingWallet";
+      const title       = description;
+      const descriptionHash = ethers.keccak256(ethers.toUtf8Bytes(description));
+
+      // Create the proposal
+      const tx = await cloudGovernor.connect(user1).proposeWithMetadata(targets, values, calldatas, title, description);
+      const receipt = await tx.wait();
+      const proposalId = receipt.logs[1].args.proposalId;
+      //console.log("Proposal Created. ID:", proposalId);
+
+      // Wait for voting delay
+      await ethers.provider.send("hardhat_mine", ["0x708"]); // 0x708 in hex = 1800 blocks
+
+      // Cast votes (user1, user2, user3)
+      await cloudGovernor.connect(user1).castVote(proposalId, 3); // Vote VETO
+      await cloudGovernor.connect(user2).castVote(proposalId, 1); // Vote For
+
+      //const proposalVotes = await cloudGovernor.proposalVotes(proposalId); console.log(proposalVotes);
+      //const totalVotes = await cloudGovernor.totalVotesOf(proposalId); console.log(totalVotes);
+      //const vetoVotes = await cloudGovernor.vetoVotes(proposalId);console.log(vetoVotes);
+
+      // Increase time to simulate 7 days
+      await ethers.provider.send("hardhat_mine", ["0x50000"]); // Mine 327,680 blocks (~7 days)
+      await ethers.provider.send("evm_mine"); // Mine 1 block
+
+      // Execute the proposal
+      await cloudGovernor.connect(user1).execute(targets, values, calldatas, descriptionHash);
+      await cloudGovernor.connect(user2).claimDeposit(proposalId);
+      
+      const userBalanceAfter = await cloudToken.balanceOf(user1.getAddress());
+
+      expect(userBalanceAfter).to.equal(userBalanceBefore); // not refunded
+    });
+
+    it("should refund deposit if veto threshold is met but prop passed", async () => {
 
       const userBalanceBefore = await cloudToken.balanceOf(user1.getAddress());
 
@@ -1409,8 +1455,8 @@ describe("CloudGovernor", function () {
       await ethers.provider.send("hardhat_mine", ["0x708"]); // 0x708 in hex = 1800 blocks
 
       // Cast votes (user1, user2, user3)
-      await cloudGovernor.connect(user2).castVote(proposalId, 3); // Vote VETO
       await cloudGovernor.connect(user1).castVote(proposalId, 1); // Vote For
+      await cloudGovernor.connect(user2).castVote(proposalId, 3); // Vote VETO
 
 
       //const proposalVotes = await cloudGovernor.proposalVotes(proposalId); console.log(proposalVotes);
@@ -1430,9 +1476,7 @@ describe("CloudGovernor", function () {
       expect(userBalanceAfter).to.equal(userBalanceBefore); // not refunded
     });
 
-
-
-  it("should refund the deposit to the proposer if the proposal is cancelled", async function () {
+    it("should refund the deposit to the proposer if the proposal is cancelled", async function () {
       //approve deposit
       await fundAndApproveProposalDeposit(cloudToken, cloudGovernor, user1);
 

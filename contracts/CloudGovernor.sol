@@ -56,6 +56,9 @@ contract CloudGovernor is
 
     event StakingContractAddressUpdated     (address oldCloudStaking, address newCloudStaking);
     event GovernanceParamUpdated            (GovernanceParam param, uint256 newValue);
+    event DepositRefunded                   (uint256 indexed proposalId, address indexed proposer);
+    event DepositSlashed                    (uint256 indexed proposalId, address indexed proposer);
+
 
     constructor(address _cloudToken, address _cloudStaking)  Governor("CloudGovernor")
     {
@@ -241,11 +244,13 @@ contract CloudGovernor is
 
         metadata.depositClaimed = true;
 
-        if (vetoed) {
-            // Keep in treasury 
-        } else {
+        if (!vetoed || state(proposalId) == ProposalState.Succeeded || state(proposalId) == ProposalState.Executed) {
             // Refund
             cloudToken.safeTransfer(metadata.proposer, metadata.depositAmount);
+            emit DepositRefunded(proposalId, metadata.proposer);
+        } else {
+           // Keep in treasury 
+           emit DepositSlashed(proposalId, metadata.proposer);
         }
     }
 
