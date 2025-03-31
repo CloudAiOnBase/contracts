@@ -1,5 +1,19 @@
 const { expect } = require("chai");
 const { ethers, upgrades } = require("hardhat");
+const { parseUnits } = ethers;
+
+
+async function fundAndApproveProposalDeposit(cloudToken, cloudGovernor, user) {
+  const [, , , proposalDepositAmount] = await cloudGovernor.getGovernanceParams();
+  const depositAmount = parseUnits(proposalDepositAmount.toString(), 18);
+
+  await cloudToken.transfer(user.getAddress(), depositAmount);
+  await cloudToken.connect(user).approve(cloudGovernor.getAddress(), depositAmount);
+
+  //console.log("depositAmount:", depositAmount.toString());
+
+}
+
 
 describe("CloudGovernor", function () {
   let CloudToken, cloudToken, CloudStakeVault, cloudStakeVault, CloudRewardPool, cloudRewardPool, CloudUtils, cloudUtils, CloudStaking, cloudStaking;
@@ -162,6 +176,9 @@ describe("CloudGovernor", function () {
   describe("Governance Functions", function () {
     it("should allow a proposal to be created, voted on, and executed (to release token from the vesting contract)", async function () {
 
+      //approve deposit
+      await fundAndApproveProposalDeposit(cloudToken, cloudGovernor, user1)
+
       //  Simulate time passage so that tokens are vested.
       await ethers.provider.send("hardhat_mine", ["0x50000"]); // Mine 327,680 blocks (~7 days)
       await ethers.provider.send("evm_mine");
@@ -181,7 +198,8 @@ describe("CloudGovernor", function () {
       // Create the proposal
       const tx = await cloudGovernor.connect(user1).proposeWithMetadata(targets, values, calldatas, title, description);
       const receipt = await tx.wait();
-      const proposalId = receipt.logs[0].args.proposalId;
+      //console.log(receipt.logs[1]);
+      const proposalId = receipt.logs[1].args.proposalId;
       //console.log("Proposal Created. ID:", proposalId);
 
       // Wait for voting delay
@@ -206,6 +224,9 @@ describe("CloudGovernor", function () {
     });
 
     it("should allow a proposal to be created, voted on, and executed (release token from the vesting contract and send to user2)", async function () {
+
+      //approve deposit
+      await fundAndApproveProposalDeposit(cloudToken, cloudGovernor, user1)
 
       //  Simulate time passage so that tokens are vested.
       await ethers.provider.send("hardhat_mine", ["0x50000"]); // Mine 327,680 blocks (~7 days)
@@ -242,7 +263,7 @@ describe("CloudGovernor", function () {
       // Create the proposal
       const tx = await cloudGovernor.connect(user1).proposeWithMetadata(targets, values, calldatas, title, description);
       const receipt = await tx.wait();
-      const proposalId = receipt.logs[0].args.proposalId;
+      const proposalId = receipt.logs[1].args.proposalId;
       //console.log("Proposal Created. ID:", proposalId);
 
       // Wait for voting delay
@@ -267,6 +288,8 @@ describe("CloudGovernor", function () {
     });
 
     it("should allow governance to transfer ownership of commFundVestingWallet to a new governor and send funds from the old governor to the new one", async function () {
+      //approve deposit
+      await fundAndApproveProposalDeposit(cloudToken, cloudGovernor, user1);
 
       //  Simulate time passage so that tokens are vested.
       await ethers.provider.send("hardhat_mine", ["0x50000"]); // Mine 327,680 blocks (~7 days)
@@ -288,7 +311,7 @@ describe("CloudGovernor", function () {
       // Create the proposal
       const tx = await cloudGovernor.connect(user1).proposeWithMetadata(targets, values, calldatas, title, description);
       const receipt = await tx.wait();
-      const proposalId = receipt.logs[0].args.proposalId;
+      const proposalId = receipt.logs[1].args.proposalId;
       //console.log("Proposal Created. ID:", proposalId);
 
       // Wait for voting delay
@@ -321,6 +344,8 @@ describe("CloudGovernor", function () {
       await cloudGovernorNew.waitForDeployment();
       //console.log("New CloudGovernor deployed at:", await cloudGovernorNew.getAddress());
 
+      //approve deposit
+      await fundAndApproveProposalDeposit(cloudToken, cloudGovernor, user1);
 
       // Step 2: Encode function calls
       const targets2 = [
@@ -349,7 +374,7 @@ describe("CloudGovernor", function () {
       // Step 3: Create the proposal
       const tx2 = await cloudGovernor.connect(user1).proposeWithMetadata(targets2, values2, calldatas2, title2, description2);
       const receipt2 = await tx2.wait();
-      const proposalId2 = receipt2.logs[0].args.proposalId;
+      const proposalId2 = receipt2.logs[1].args.proposalId;
 
       //console.log("Proposal Created. ID:", proposalId2);
 
@@ -378,6 +403,9 @@ describe("CloudGovernor", function () {
     });
 
     it("should allow governance to change governance voting parameters (e.g., quorum, proposal threshold)", async function () {
+      //approve deposit
+      await fundAndApproveProposalDeposit(cloudToken, cloudGovernor, user1);
+
       // Fetch current parameters
       const oldQuorum = (await cloudGovernor.getGovernanceParams())[2]; // Quorum value
       const oldProposalThreshold = await cloudGovernor.proposalThreshold();
@@ -404,7 +432,7 @@ describe("CloudGovernor", function () {
       // Propose the update
       const tx = await cloudGovernor.connect(user1).proposeWithMetadata(targets, values, calldatas, title, description);
       const receipt = await tx.wait();
-      const proposalId = receipt.logs[0].args.proposalId;
+      const proposalId = receipt.logs[1].args.proposalId;
 
       // Mine a block for the voting delay
       await ethers.provider.send("hardhat_mine", ["0x708"]); // 0x708 in hex = 1800 blocks
@@ -428,6 +456,9 @@ describe("CloudGovernor", function () {
     });
 
     it("should allow governance to change APR settings in the Staking contract", async function () {
+      //approve deposit
+      await fundAndApproveProposalDeposit(cloudToken, cloudGovernor, user1);
+
       // Fetch current APR parameters
       let [
         , , , , // Skip first 4 values
@@ -464,7 +495,7 @@ describe("CloudGovernor", function () {
       // Propose the update
       const tx = await cloudGovernor.connect(user1).proposeWithMetadata(targets, values, calldatas, title, description);
       const receipt = await tx.wait();
-      const proposalId = receipt.logs[0].args.proposalId;
+      const proposalId = receipt.logs[1].args.proposalId;
 
       // Mine a block for the voting delay
       await ethers.provider.send("hardhat_mine", ["0x708"]); // 0x708 in hex = 1800 blocks
@@ -615,6 +646,10 @@ describe("CloudGovernor", function () {
 
   describe("Proposal Execution Scenarios", function () {
     it("A proposal should fail if quorum is not met", async function () {
+
+      //approve deposit
+      await fundAndApproveProposalDeposit(cloudToken, cloudGovernor, user1);
+
       // Fetch the required quorum percentage
       const [, , quorumPercentage] = await cloudGovernor.getGovernanceParams();
       
@@ -637,7 +672,7 @@ describe("CloudGovernor", function () {
       // Create a proposal
       const tx              = await cloudGovernor.connect(user1).proposeWithMetadata(targets, values, calldatas, title, description);
       const receipt         = await tx.wait();
-      const proposalId      = receipt.logs[0].args.proposalId;
+      const proposalId      = receipt.logs[1].args.proposalId;
 
       // Mine a block for the voting delay
       await ethers.provider.send("hardhat_mine", ["0x708"]); // 0x708 in hex = 1800 blocks
@@ -657,6 +692,9 @@ describe("CloudGovernor", function () {
     });
 
     it("A proposal fails if votes are insufficient", async function () {
+      //approve deposit
+      await fundAndApproveProposalDeposit(cloudToken, cloudGovernor, user1);
+
       // Fetch quorum requirement
       const [, , quorumPercentage] = await cloudGovernor.getGovernanceParams();
       const totalVotes = await cloudStaking.totalStakedForTally();
@@ -672,7 +710,7 @@ describe("CloudGovernor", function () {
       // Create a proposal
       const tx              = await cloudGovernor.connect(user1).proposeWithMetadata(targets, values, calldatas, title, description);
       const receipt         = await tx.wait();
-      const proposalId      = receipt.logs[0].args.proposalId;
+      const proposalId      = receipt.logs[1].args.proposalId;
 
       // Mine a block for the voting delay
       await ethers.provider.send("hardhat_mine", ["0x708"]); // 0x708 in hex = 1800 blocks
@@ -694,6 +732,10 @@ describe("CloudGovernor", function () {
     });
 
     it("Governor can upgrade the CloudStaking contract", async function () {
+
+      //approve deposit
+      await fundAndApproveProposalDeposit(cloudToken, cloudGovernor, user1);
+
       // Deploy the new version of CloudStaking (CloudStakingV3)
       const CloudStakingV3 = await ethers.getContractFactory("CloudStaking");
       const newImplementation = await CloudStakingV3.deploy();
@@ -715,7 +757,7 @@ describe("CloudGovernor", function () {
       // Propose the upgrade
       const tx = await cloudGovernor.connect(user1).proposeWithMetadata(targets, values, calldatas, title, description);
       const receipt = await tx.wait();
-      const proposalId = receipt.logs[0].args.proposalId;
+      const proposalId = receipt.logs[1].args.proposalId;
 
       // Mine a block for the voting delay
       await ethers.provider.send("hardhat_mine", ["0x708"]); // 0x708 in hex = 1800 blocks
@@ -750,6 +792,9 @@ describe("CloudGovernor", function () {
     });
 
     it("Governance cannot execute an invalid proposal", async function () {
+      //approve deposit
+      await fundAndApproveProposalDeposit(cloudToken, cloudGovernor, user1);
+
       // Define a fake proposal ID that doesn't exist
       const invalidProposalId = 999999; // A high number that no proposal has
       
@@ -768,7 +813,7 @@ describe("CloudGovernor", function () {
       // Create a proposal but make it fail by NOT voting on it
       const tx          = await cloudGovernor.connect(user1).proposeWithMetadata(targets, values, calldatas, title, description);
       const receipt     = await tx.wait();
-      const proposalId  = receipt.logs[0].args.proposalId;
+      const proposalId  = receipt.logs[1].args.proposalId;
 
       // Mine a block for the voting delay
       await ethers.provider.send("hardhat_mine", ["0x708"]); // 0x708 in hex = 1800 blocks
@@ -794,7 +839,7 @@ describe("CloudGovernor", function () {
       const countingMode = await cloudGovernor.COUNTING_MODE();
 
       // Log the counting mode for debugging
-      console.log("COUNTING_MODE:", countingMode);
+      //console.log("COUNTING_MODE:", countingMode);
 
       // ✅ Verify that it follows the expected format
       expect(countingMode).to.be.a("string");
@@ -803,6 +848,9 @@ describe("CloudGovernor", function () {
     });
 
     it("Fetch Proposal details", async function () {
+      //approve deposit
+      await fundAndApproveProposalDeposit(cloudToken, cloudGovernor, user1);
+
       // Define a test proposal
       const targets         = [await cloudGovernor.getAddress()];
       const values          = [0];
@@ -814,7 +862,7 @@ describe("CloudGovernor", function () {
       // Create the proposal
       const tx              = await cloudGovernor.connect(user1).proposeWithMetadata(targets, values, calldatas, title, description);
       const receipt         = await tx.wait();
-      const proposalId      = receipt.logs[0].args.proposalId;
+      const proposalId      = receipt.logs[1].args.proposalId;
       
       // Fetch proposal details using OpenZeppelin Governor functions
       const startBlock = await cloudGovernor.proposalSnapshot(proposalId);
@@ -822,10 +870,10 @@ describe("CloudGovernor", function () {
       const state = await cloudGovernor.state(proposalId);
 
       // Log proposal details for debugging
-      console.log("Proposal ID:", proposalId.toString());
-      console.log("Proposal Start Block:", startBlock.toString());
-      console.log("Proposal End Block:", endBlock.toString());
-      console.log("Proposal State:", state.toString()); // 0 = Pending
+      //console.log("Proposal ID:", proposalId.toString());
+      //console.log("Proposal Start Block:", startBlock.toString());
+      //console.log("Proposal End Block:", endBlock.toString());
+      //console.log("Proposal State:", state.toString()); // 0 = Pending
 
       // ✅ Verify the proposal details
       expect(startBlock).to.be.gt(0);
@@ -844,10 +892,10 @@ describe("CloudGovernor", function () {
       const user3VotingPower = await cloudStaking.userStakedForTally(user3.address, latestBlock);
 
       // Log the values for debugging
-      console.log("Total Staked in System:", ethers.formatEther(totalStaked));
-      console.log("User1 Voting Power:", ethers.formatEther(user1VotingPower));
-      console.log("User2 Voting Power:", ethers.formatEther(user2VotingPower));
-      console.log("User3 Voting Power:", ethers.formatEther(user3VotingPower));
+      //console.log("Total Staked in System:", ethers.formatEther(totalStaked));
+      //console.log("User1 Voting Power:", ethers.formatEther(user1VotingPower));
+      //console.log("User2 Voting Power:", ethers.formatEther(user2VotingPower));
+      //console.log("User3 Voting Power:", ethers.formatEther(user3VotingPower));
 
       // Ensure total staked is greater than zero
       expect(totalStaked).to.be.gt(0);
@@ -863,6 +911,9 @@ describe("CloudGovernor", function () {
     });
 
     it("Fetch proposal wallet counts (against, for, abstain)", async function () {
+      //approve deposit
+      await fundAndApproveProposalDeposit(cloudToken, cloudGovernor, user1);
+
       // Define a test proposal
       const targets = [await cloudGovernor.getAddress()];
       const values = [0];
@@ -874,7 +925,7 @@ describe("CloudGovernor", function () {
       // Create the proposal
       const tx = await cloudGovernor.connect(user1).proposeWithMetadata(targets, values, calldatas, title, description);
       const receipt = await tx.wait();
-      const proposalId = receipt.logs[0].args.proposalId;
+      const proposalId = receipt.logs[1].args.proposalId;
 
       // Mine a block for the voting delay
       await ethers.provider.send("hardhat_mine", ["0x708"]); // 0x708 in hex = 1800 blocks
@@ -894,10 +945,10 @@ describe("CloudGovernor", function () {
       const abstainWallets = proposalVoteCounts[2];
 
       // Log the vote results
-      console.log("Proposal ID:", proposalId.toString());
-      console.log("Against Votes (wallets):", againstWallets.toString());
-      console.log("For Votes (wallets):", forWallets.toString());
-      console.log("Abstain Votes (wallets):", abstainWallets.toString());
+      //console.log("Proposal ID:", proposalId.toString());
+      //console.log("Against Votes (wallets):", againstWallets.toString());
+      //console.log("For Votes (wallets):", forWallets.toString());
+      //console.log("Abstain Votes (wallets):", abstainWallets.toString());
 
       // Verify vote counts match the expected wallets that voted
       expect(againstWallets).to.equal(1); // Only user2 voted against
@@ -906,6 +957,7 @@ describe("CloudGovernor", function () {
     });
 
     it("Fetch all proposals with pagination", async function () {
+
       // Define multiple test proposals
       const targets = [await cloudGovernor.getAddress()];
       const values = [0];
@@ -915,11 +967,12 @@ describe("CloudGovernor", function () {
 
       // Create 5 proposals
       for (let i = 0; i < 5; i++) {
+        await fundAndApproveProposalDeposit(cloudToken, cloudGovernor, user1);
         const description = `Test Proposal ${i + 1}`;
         const title = description;
         const tx = await cloudGovernor.connect(user1).proposeWithMetadata(targets, values, calldatas, title, description);
         const receipt = await tx.wait();
-        const proposalId = receipt.logs[0].args.proposalId;
+        const proposalId = receipt.logs[1].args.proposalId;
         proposalIds.push(proposalId);
       }
 
@@ -933,7 +986,7 @@ describe("CloudGovernor", function () {
       }
 
       // Log fetched proposals for debugging
-      console.log("Fetched Proposals:", fetchedProposals.map(p => p.toString()));
+      //console.log("Fetched Proposals:", fetchedProposals.map(p => p.toString()));
 
       // Ensure we fetched all proposals
       expect(fetchedProposals.length).to.equal(proposalIds.length);
@@ -945,6 +998,9 @@ describe("CloudGovernor", function () {
     });
 
     it("Fetch proposal's vote count and weight", async function () {
+      //approve deposit
+      await fundAndApproveProposalDeposit(cloudToken, cloudGovernor, user1);
+
       // Define a test proposal
       const targets = [await cloudGovernor.getAddress()];
       const values = [0];
@@ -956,7 +1012,7 @@ describe("CloudGovernor", function () {
       // Create the proposal
       const tx = await cloudGovernor.connect(user1).proposeWithMetadata(targets, values, calldatas, title, description);
       const receipt = await tx.wait();
-      const proposalId = receipt.logs[0].args.proposalId;
+      const proposalId = receipt.logs[1].args.proposalId;
 
       // Mine a block for the voting delay
       await ethers.provider.send("hardhat_mine", ["0x708"]); // 0x708 in hex = 1800 blocks
@@ -982,10 +1038,10 @@ describe("CloudGovernor", function () {
       const abstainVotes = await cloudGovernor.hasVoted(proposalId, user3.address);
 
       // Log the vote results
-      console.log("Proposal ID:", proposalId.toString());
-      console.log("For Votes:", proposalVoteCounts.forWallets.toString(), "Voting Power:", ethers.formatEther(user1VotingPower));
-      console.log("Against Votes:", proposalVoteCounts.againstWallets.toString(), "Voting Power:", ethers.formatEther(user2VotingPower));
-      console.log("Abstain Votes:", proposalVoteCounts.abstainWallets.toString(), "Voting Power:", ethers.formatEther(user3VotingPower));
+      //console.log("Proposal ID:", proposalId.toString());
+      //console.log("For Votes:", proposalVoteCounts.forWallets.toString(), "Voting Power:", ethers.formatEther(user1VotingPower));
+      //console.log("Against Votes:", proposalVoteCounts.againstWallets.toString(), "Voting Power:", ethers.formatEther(user2VotingPower));
+      //console.log("Abstain Votes:", proposalVoteCounts.abstainWallets.toString(), "Voting Power:", ethers.formatEther(user3VotingPower));
 
       // Verify vote counts match the expected voters
       expect(proposalVoteCounts.forWallets).to.equal(1);
@@ -999,6 +1055,9 @@ describe("CloudGovernor", function () {
     });
 
     it("Stores and fetches proposal title & description on-chain", async function () {
+      //approve deposit
+      await fundAndApproveProposalDeposit(cloudToken, cloudGovernor, user1);
+
       const title = "Upgrade Staking Contract";
       const description = "This proposal upgrades the staking contract to v2.";
 
@@ -1009,14 +1068,14 @@ describe("CloudGovernor", function () {
       // Create the proposal with title & description
       const tx = await cloudGovernor.connect(user1).proposeWithMetadata(targets, values, calldatas, title, description);
       const receipt = await tx.wait();
-      const proposalId = receipt.logs[0].args.proposalId;
+      const proposalId = receipt.logs[1].args.proposalId;
 
       // Fetch metadata from the contract
-      const storedMetadata = await cloudGovernor.getProposalMetadata(proposalId);
+      const storedMetadata = await cloudGovernor.proposalsMetadata(proposalId);
 
       // Log results
-      console.log("Stored Title:", storedMetadata[0]);
-      console.log("Stored Description:", storedMetadata[1]);
+      //console.log("Stored Title:", storedMetadata[0]);
+      //console.log("Stored Description:", storedMetadata[1]);
 
       // ✅ Ensure the title & description match
       expect(storedMetadata[0]).to.equal(title);
@@ -1026,6 +1085,9 @@ describe("CloudGovernor", function () {
 
   describe("Edge Cases", function () {
     it("Proposal is canceled before execution", async function () {
+      //approve deposit
+      await fundAndApproveProposalDeposit(cloudToken, cloudGovernor, user1);
+
       const title           = "Test Proposal Cancellation";
       const description     = "This proposal should be canceled before execution.";
       const targets         = [await cloudGovernor.getAddress()];
@@ -1036,7 +1098,7 @@ describe("CloudGovernor", function () {
       // Create proposal
       const tx          = await cloudGovernor.connect(user1).proposeWithMetadata(targets, values, calldatas, title, description);
       const receipt     = await tx.wait();
-      const proposalId  = receipt.logs[0].args.proposalId;
+      const proposalId  = receipt.logs[1].args.proposalId;
 
       // Ensure proposal is in the Pending state
       let state = await cloudGovernor.state(proposalId);
@@ -1059,6 +1121,9 @@ describe("CloudGovernor", function () {
     });
 
     it("User votes but later unstakes, reducing vote count", async function () {
+      //approve deposit
+      await fundAndApproveProposalDeposit(cloudToken, cloudGovernor, user1);
+
       const title       = "Test Proposal - Vote Before Unstaking";
       const description = "This proposal tests vote count reduction after unstaking.";
       const targets     = [await cloudGovernor.getAddress()];
@@ -1068,14 +1133,14 @@ describe("CloudGovernor", function () {
       // Create proposal
       const tx          = await cloudGovernor.connect(user1).proposeWithMetadata(targets, values, calldatas, title, description);
       const receipt     = await tx.wait();
-      const proposalId  = receipt.logs[0].args.proposalId;
+      const proposalId  = receipt.logs[1].args.proposalId;
 
       // Mine a block for the voting delay
       await ethers.provider.send("hardhat_mine", ["0x708"]); // 0x708 in hex = 1800 blocks
 
       // Check user1's initial voting power
       let votingPowerBefore = await cloudGovernor.getVotes(user1.address, await ethers.provider.getBlockNumber() - 1);
-      console.log("Voting Power Before Unstaking:", votingPowerBefore.toString());
+      //console.log("Voting Power Before Unstaking:", votingPowerBefore.toString());
 
       // User1 votes
       await cloudGovernor.connect(user1).castVote(proposalId, 1); // 1 = FOR
@@ -1085,14 +1150,14 @@ describe("CloudGovernor", function () {
 
       // Check user1's voting power after unstaking
       let votingPowerAfter = await cloudGovernor.getVotes(user1.address, await ethers.provider.getBlockNumber());
-      console.log("Voting Power After Unstaking:", votingPowerAfter.toString());
+      //console.log("Voting Power After Unstaking:", votingPowerAfter.toString());
 
       // Ensure voting power is now 0
       expect(votingPowerAfter).to.equal(0);
 
       // Check that the vote still counts in the proposal
       const proposalVotes = await cloudGovernor.proposalVotes(proposalId);
-      console.log("Proposal Votes:", proposalVotes.toString());
+      //console.log("Proposal Votes:", proposalVotes.toString());
 
       // Ensure the proposal still registers the original vote
       expect(proposalVotes.forVotes).to.be.gt(0); // The vote should still be counted
@@ -1110,13 +1175,15 @@ describe("CloudGovernor", function () {
       const calldatas = [cloudGovernor.interface.encodeFunctionData("votingPeriod")];
 
       // Create two proposals
+      await fundAndApproveProposalDeposit(cloudToken, cloudGovernor, user1);
       const tx1 = await cloudGovernor.connect(user1).proposeWithMetadata(targets, values, calldatas, title1, description1);
       const receipt1 = await tx1.wait();
-      const proposalId1 = receipt1.logs[0].args.proposalId;
+      const proposalId1 = receipt1.logs[1].args.proposalId;
 
+      await fundAndApproveProposalDeposit(cloudToken, cloudGovernor, user2);
       const tx2 = await cloudGovernor.connect(user2).proposeWithMetadata(targets, values, calldatas, title2, description2);
       const receipt2 = await tx2.wait();
-      const proposalId2 = receipt2.logs[0].args.proposalId;
+      const proposalId2 = receipt2.logs[1].args.proposalId;
 
       // Ensure both proposals exist and are in Pending state
       let state1 = await cloudGovernor.state(proposalId1);
@@ -1149,6 +1216,9 @@ describe("CloudGovernor", function () {
     });
 
     it("Prevents double voting on the same proposal", async function () {
+      //approve deposit
+      await fundAndApproveProposalDeposit(cloudToken, cloudGovernor, user1);
+
       const title = "Proposal - Prevent Double Voting";
       const description = "This proposal ensures users cannot vote twice.";
 
@@ -1159,7 +1229,7 @@ describe("CloudGovernor", function () {
       // Create proposal
       const tx = await cloudGovernor.connect(user1).proposeWithMetadata(targets, values, calldatas, title, description);
       const receipt = await tx.wait();
-      const proposalId = receipt.logs[0].args.proposalId;
+      const proposalId = receipt.logs[1].args.proposalId;
 
       // Mine a block for the voting delay
       await ethers.provider.send("hardhat_mine", ["0x708"]); // 0x708 in hex = 1800 blocks
@@ -1174,6 +1244,9 @@ describe("CloudGovernor", function () {
     });
 
     it("Prevents executing a proposal more than once", async function () {
+      //approve deposit
+      await fundAndApproveProposalDeposit(cloudToken, cloudGovernor, user1);
+
       const title = "Proposal - Prevent Double Execution";
       const description = "This proposal ensures a proposal cannot be executed twice.";
 
@@ -1184,7 +1257,7 @@ describe("CloudGovernor", function () {
       // Create proposal
       const tx = await cloudGovernor.connect(user1).proposeWithMetadata(targets, values, calldatas, title, description);
       const receipt = await tx.wait();
-      const proposalId = receipt.logs[0].args.proposalId;
+      const proposalId = receipt.logs[1].args.proposalId;
 
       // Mine a block for the voting delay
       await ethers.provider.send("hardhat_mine", ["0x708"]); // 0x708 in hex = 1800 blocks
@@ -1211,6 +1284,9 @@ describe("CloudGovernor", function () {
     });
 
     it("Prevents unauthorized users from canceling a proposal", async function () {
+      //approve deposit
+      await fundAndApproveProposalDeposit(cloudToken, cloudGovernor, user1);
+
       const title = "Proposal - Unauthorized Cancellation";
       const description = "This proposal ensures only authorized users can cancel.";
 
@@ -1221,7 +1297,7 @@ describe("CloudGovernor", function () {
       // Create proposal
       const tx = await cloudGovernor.connect(user1).proposeWithMetadata(targets, values, calldatas, title, description);
       const receipt = await tx.wait();
-      const proposalId = receipt.logs[0].args.proposalId;
+      const proposalId = receipt.logs[1].args.proposalId;
 
       // Mine a block for voting
         await ethers.provider.send("evm_mine");
@@ -1246,4 +1322,201 @@ describe("CloudGovernor", function () {
 
   });  
 
+
+  describe("Deposit Mechanics", function () {
+    it("should revert if user has not approved enough deposit", async () => {
+      const [, , , depositAmountTokens] = await cloudGovernor.getGovernanceParams();
+      const depositAmount = parseUnits(depositAmountTokens.toString(), 18);
+
+      //Encode the function call to release funds from VestingWallet
+      const targets = [];
+      const values = []; // No ETH transfer, only token
+      const calldatas = [];
+      const description = "Release from the commFundVestingWallet";
+      const title = description;
+      const descriptionHash = ethers.keccak256(ethers.toUtf8Bytes(description));
+
+
+      // user1 has no approval
+      await expect(
+        cloudGovernor.connect(user1).proposeWithMetadata(targets, values, calldatas, title, description)
+      ).to.be.revertedWith("Insufficient token allowance");
+    });
+
+    it("should refund the deposit to the proposer if the proposal is successful", async () => {
+
+      await fundAndApproveProposalDeposit(cloudToken, cloudGovernor, user1);
+
+      const userBalanceBefore = await cloudToken.balanceOf(user1.getAddress());
+
+      //Encode the function call to release funds from VestingWallet
+      const targets     = [user1.address]; // or any contract address
+      const values      = [0];
+      const calldatas   = [ "0x" ]; // empty calldata
+      const description = "Release from the commFundVestingWallet";
+      const title       = description;
+      const descriptionHash = ethers.keccak256(ethers.toUtf8Bytes(description));
+
+      // Create the proposal
+      const tx = await cloudGovernor.connect(user1).proposeWithMetadata(targets, values, calldatas, title, description);
+      const receipt = await tx.wait();
+      const proposalId = receipt.logs[1].args.proposalId;
+      //console.log("Proposal Created. ID:", proposalId);
+
+
+      // Wait for voting delay
+      await ethers.provider.send("hardhat_mine", ["0x708"]); // 0x708 in hex = 1800 blocks
+
+      // Cast votes (user1, user2, user3)
+      await cloudGovernor.connect(user1).castVote(proposalId, 1); // Vote FOR
+      await cloudGovernor.connect(user2).castVote(proposalId, 1); // Vote FOR
+
+      // Increase time to simulate 7 days
+      await ethers.provider.send("hardhat_mine", ["0x50000"]); // Mine 327,680 blocks (~7 days)
+      await ethers.provider.send("evm_mine"); // Mine 1 block
+
+      // Execute the proposal
+      await cloudGovernor.connect(user2).execute(targets, values, calldatas, descriptionHash);
+      await cloudGovernor.connect(user1).claimDeposit(proposalId);
+
+      const userBalanceAfter = await cloudToken.balanceOf(user1.getAddress());
+
+      expect(userBalanceAfter).to.equal(userBalanceBefore); // fully refunded
+    });
+
+
+    it("should not refund deposit if veto threshold is met", async () => {
+
+      const userBalanceBefore = await cloudToken.balanceOf(user1.getAddress());
+
+      await fundAndApproveProposalDeposit(cloudToken, cloudGovernor, user1);
+
+      //Encode the function call to release funds from VestingWallet
+      const targets     = [user1.address]; // or any contract address
+      const values      = [0];
+      const calldatas   = [ "0x" ]; // empty calldata
+      const description = "Release from the commFundVestingWallet";
+      const title       = description;
+      const descriptionHash = ethers.keccak256(ethers.toUtf8Bytes(description));
+
+      // Create the proposal
+      const tx = await cloudGovernor.connect(user1).proposeWithMetadata(targets, values, calldatas, title, description);
+      const receipt = await tx.wait();
+      const proposalId = receipt.logs[1].args.proposalId;
+      //console.log("Proposal Created. ID:", proposalId);
+
+      // Wait for voting delay
+      await ethers.provider.send("hardhat_mine", ["0x708"]); // 0x708 in hex = 1800 blocks
+
+      // Cast votes (user1, user2, user3)
+      await cloudGovernor.connect(user2).castVote(proposalId, 3); // Vote VETO
+      await cloudGovernor.connect(user1).castVote(proposalId, 1); // Vote For
+
+
+      //const proposalVotes = await cloudGovernor.proposalVotes(proposalId); console.log(proposalVotes);
+      //const totalVotes = await cloudGovernor.totalVotesOf(proposalId); console.log(totalVotes);
+      //const vetoVotes = await cloudGovernor.vetoVotes(proposalId);console.log(vetoVotes);
+
+      // Increase time to simulate 7 days
+      await ethers.provider.send("hardhat_mine", ["0x50000"]); // Mine 327,680 blocks (~7 days)
+      await ethers.provider.send("evm_mine"); // Mine 1 block
+
+      // Execute the proposal
+      await expect(cloudGovernor.connect(user1).execute(targets, values, calldatas, descriptionHash)).to.be.reverted;
+      await cloudGovernor.connect(user2).claimDeposit(proposalId);
+      
+      const userBalanceAfter = await cloudToken.balanceOf(user1.getAddress());
+
+      expect(userBalanceAfter).to.equal(userBalanceBefore); // not refunded
+    });
+
+
+
+  it("should refund the deposit to the proposer if the proposal is cancelled", async function () {
+      //approve deposit
+      await fundAndApproveProposalDeposit(cloudToken, cloudGovernor, user1);
+
+      const userBalanceBefore = await cloudToken.balanceOf(user1.getAddress());
+
+      const title           = "Test Proposal Cancellation";
+      const description     = "This proposal should be canceled before execution.";
+      const targets         = [await cloudGovernor.getAddress()];
+      const values          = [0];
+      const calldatas       = [cloudGovernor.interface.encodeFunctionData("votingPeriod")];
+      const descriptionHash = ethers.keccak256(ethers.toUtf8Bytes(description));
+
+      // Create proposal
+      const tx          = await cloudGovernor.connect(user1).proposeWithMetadata(targets, values, calldatas, title, description);
+      const receipt     = await tx.wait();
+      const proposalId  = receipt.logs[1].args.proposalId;
+
+      // Ensure proposal is in the Pending state
+      let state = await cloudGovernor.state(proposalId);
+      expect(state).to.equal(0); // 0 = Pending
+
+      await ethers.provider.send("evm_mine");
+
+      // Cancel the proposal
+      await cloudGovernor.connect(user1).cancel(targets, values, calldatas, descriptionHash);
+
+      // Check if the proposal is now canceled
+      state = await cloudGovernor.state(proposalId);
+      expect(state).to.equal(2); // 2 = Canceled
+
+ 
+      await cloudGovernor.connect(user2).claimDeposit(proposalId);
+      
+      const userBalanceAfter = await cloudToken.balanceOf(user1.getAddress());
+
+      expect(userBalanceAfter).to.equal(userBalanceBefore); // refunded
+    });
+
+
+   it("Double Claim Prevention", async () => {
+
+      await fundAndApproveProposalDeposit(cloudToken, cloudGovernor, user1);
+
+      const userBalanceBefore = await cloudToken.balanceOf(user1.getAddress());
+
+      //Encode the function call to release funds from VestingWallet
+      const targets     = [user1.address]; // or any contract address
+      const values      = [0];
+      const calldatas   = [ "0x" ]; // empty calldata
+      const description = "Release from the commFundVestingWallet";
+      const title       = description;
+      const descriptionHash = ethers.keccak256(ethers.toUtf8Bytes(description));
+
+      // Create the proposal
+      const tx = await cloudGovernor.connect(user1).proposeWithMetadata(targets, values, calldatas, title, description);
+      const receipt = await tx.wait();
+      const proposalId = receipt.logs[1].args.proposalId;
+      //console.log("Proposal Created. ID:", proposalId);
+
+
+      // Wait for voting delay
+      await ethers.provider.send("hardhat_mine", ["0x708"]); // 0x708 in hex = 1800 blocks
+
+      // Cast votes (user1, user2, user3)
+      await cloudGovernor.connect(user1).castVote(proposalId, 1); // Vote FOR
+      await cloudGovernor.connect(user2).castVote(proposalId, 1); // Vote FOR
+
+      // Increase time to simulate 7 days
+      await ethers.provider.send("hardhat_mine", ["0x50000"]); // Mine 327,680 blocks (~7 days)
+      await ethers.provider.send("evm_mine"); // Mine 1 block
+
+      // Execute the proposal
+      await cloudGovernor.connect(user2).execute(targets, values, calldatas, descriptionHash);
+      await cloudGovernor.connect(user1).claimDeposit(proposalId);
+      await cloudGovernor.connect(user1).claimDeposit(proposalId);
+
+      const userBalanceAfter = await cloudToken.balanceOf(user1.getAddress());
+
+      expect(userBalanceAfter).to.equal(userBalanceBefore); // fully refunded
+    });
+
+  });
+
+
+
 });
+

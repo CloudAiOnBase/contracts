@@ -5,6 +5,7 @@ pragma solidity ^0.8.19;
 // Developed by @BullBoss5
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/governance/Governor.sol";
 import "@openzeppelin/contracts/governance/extensions/GovernorCountingSimple.sol";
 
@@ -17,6 +18,8 @@ contract CloudGovernor is
     Governor, 
     GovernorCountingSimple
 {
+    using SafeERC20 for IERC20;
+
     IERC20              public cloudToken;
     ICloudStaking       public cloudStaking;
 
@@ -24,22 +27,32 @@ contract CloudGovernor is
     uint256   private votingPeriodValue;
     uint256   private proposalThresholdValue;
     uint256   private quorumValue;
+    uint256   private proposalDepositAmount;
+    uint256   private vetoThresholdPercent;
     uint256[] public  proposalIds;
     
     struct ProposalWalletCount {
         uint256 againstWallets;
         uint256 forWallets;
         uint256 abstainWallets;
+        uint256 vetoWallets;
     }
+
     struct ProposalMetadata {
-        string title;
-        string description;
+        string  title;
+        string  description;
+        uint256 depositAmount;
+        address proposer;
+        bool    depositClaimed;
     }
+
     mapping(uint256 => uint256)             private _quorumSnapshotByBlock;
     mapping(uint256 => bool)                public  allProposals;
-    mapping(uint256 => ProposalWalletCount) private _proposalWalletCounts;
+    mapping(uint256 => ProposalWalletCount) public proposalWalletCounts;
     mapping(address => uint256)             private _lastActivityTime;
-    mapping(uint256 => ProposalMetadata)    private _proposalsMetadata;
+    mapping(uint256 => ProposalMetadata)    public proposalsMetadata;
+    mapping(uint256 => uint256)             public vetoVotes;
+
 
     event StakingContractAddressUpdated     (address oldCloudStaking, address newCloudStaking);
     event GovernanceParamUpdated            (GovernanceParam param, uint256 newValue);
@@ -52,6 +65,8 @@ contract CloudGovernor is
         votingPeriodValue      = 7 * 24 * 3600;      // 7 days in seconds
         proposalThresholdValue = 10_000 * 1e18;      // 10,000 CLOUD in wei
         quorumValue            = 33;                 // 33% quorum
+        proposalDepositAmount  = 10_000 * 1e18;      // 10,000 CLOUD
+        vetoThresholdPercent   = 33;                 // 33% veto thresold
 
         cloudToken      = IERC20(_cloudToken);
         cloudStaking    = ICloudStaking(_cloudStaking);
@@ -61,7 +76,9 @@ contract CloudGovernor is
     enum GovernanceParam {
         VotingPeriodValue,              // 0  in days    example: 5
         ProposalThresholdValue,         // 1  in CLOUD   example: 10,000 
-        QuorumValue                     // 2  in %       example: 33
+        QuorumValue,                    // 2  in %       example: 33
+        ProposalDepositAmount,          // 3  in CLOUD   example: 10,000
+        VetoThresholdPercent            // 4  in %       example: 33
     }
 
     // ============================================
@@ -97,18 +114,16 @@ contract CloudGovernor is
     function getGovernanceParams()                      external view returns (
         uint256 _votingPeriodValue,
         uint256 _proposalThresholdValue,
-        uint256 _quorumValue
+        uint256 _quorumValue,
+        uint256 _proposalDepositAmount,
+        uint256 _vetoThresholdPercent
     ) {
         _votingPeriodValue              = votingPeriodValue         / (24 * 3600);
         _proposalThresholdValue         = proposalThresholdValue    / 1e18;
         _quorumValue                    = quorumValue;
-    }
+        _proposalDepositAmount          = proposalDepositAmount     / 1e18;
+        _vetoThresholdPercent           = vetoThresholdPercent;
 
-    function proposalWalletCounts(uint256 proposalId)   public view returns (uint256 againstWallets, uint256 forWallets, uint256 abstainWallets) {
-
-        ProposalWalletCount storage count = _proposalWalletCounts[proposalId];
-
-        return (count.againstWallets, count.forWallets, count.abstainWallets);
     }
 
     function getLastActivityTime(address user)          external view returns (uint256) {
@@ -132,10 +147,14 @@ contract CloudGovernor is
         return paginatedProposals;
     }
 
-    function getProposalMetadata(uint256 proposalId)   public view  returns (string memory title, string memory description)
-    {
-        ProposalMetadata storage metadata = _proposalsMetadata[proposalId];
-        return (metadata.title, metadata.description);
+    function totalVotesOf(uint256 proposalId) public view returns (uint256) {
+        (
+            uint256 againstVotes,
+            uint256 forVotes,
+            uint256 abstainVotes
+        ) = super.proposalVotes(proposalId);
+
+        return againstVotes + forVotes + abstainVotes;
     }
 
     // ============================================
@@ -159,25 +178,39 @@ contract CloudGovernor is
     function _countVote(
         uint256 proposalId,
         address account,
-        uint8 support, // 0 = Against, 1 = For, 2 = Abstain
-        uint256 totalWeight, // Ensure it matches OpenZeppelin's function signature
+        uint8 support, // 0 = Against, 1 = For, 2 = Abstain, 3 = No with Veto
+        uint256 totalWeight,
         bytes memory params
-    ) internal override(Governor, GovernorCountingSimple) returns (uint256) { // Ensure it returns uint256
+    ) internal override(Governor, GovernorCountingSimple) returns (uint256) {
+        require(support <= 3, "Invalid support value");
 
-        uint256 countedWeight = super._countVote(proposalId, account, support, totalWeight, params); // Call the parent function and store the return value
+        bool isVeto = false;
 
-        // Increment respective wallet counts (each wallet votes only once)
-        if (support == 0) {
-            _proposalWalletCounts[proposalId].againstWallets++;
-        } else if (support == 1) {
-            _proposalWalletCounts[proposalId].forWallets++;
-        } else if (support == 2) {
-            _proposalWalletCounts[proposalId].abstainWallets++;
+        // Interpret support = 3 as a veto vote
+        if (support == 3) {
+            support = 0;
+            isVeto = true;
         }
 
-        _lastActivityTime[account] = block.timestamp;  // Record the user's activity time upon voting.
+        uint256 countedWeight = super._countVote(proposalId, account, support, totalWeight, params);
 
-        return countedWeight; // Return the counted weight to match the expected return type
+        if (support == 0) {
+            if (isVeto) {
+                vetoVotes[proposalId] += countedWeight;
+                proposalWalletCounts[proposalId].vetoWallets++;
+            }else
+            {
+                proposalWalletCounts[proposalId].againstWallets++;
+            }
+        } else if (support == 1) {
+            proposalWalletCounts[proposalId].forWallets++;
+        } else if (support == 2) {
+            proposalWalletCounts[proposalId].abstainWallets++;
+        }
+
+        _lastActivityTime[account] = block.timestamp;
+
+        return countedWeight;
     }
 
     // Internal function to allow proposeWithMetadata() to call propose()
@@ -188,6 +221,32 @@ contract CloudGovernor is
         string memory description
     ) internal returns (uint256) {
         return super.propose(targets, values, calldatas, description);
+    }
+
+    function _handleProposalDeposit(uint256 proposalId) internal {
+        ProposalMetadata storage metadata = proposalsMetadata[proposalId];
+
+        if (metadata.depositClaimed) return;
+        if (metadata.proposer == address(0)) return;
+
+        uint256 totalVotes     = totalVotesOf(proposalId);
+        uint256 propVetoVotes  = vetoVotes[proposalId];
+
+        bool    vetoed;
+        if (totalVotes == 0) {
+          vetoed = false;
+        } else {
+          vetoed = (propVetoVotes * 100 / totalVotes) >= vetoThresholdPercent;
+        }
+
+        metadata.depositClaimed = true;
+
+        if (vetoed) {
+            // Keep in treasury 
+        } else {
+            // Refund
+            cloudToken.safeTransfer(metadata.proposer, metadata.depositAmount);
+        }
     }
 
     // ============================================
@@ -221,15 +280,15 @@ contract CloudGovernor is
             GovernanceParam param = GovernanceParam(keys[i]);
 
             if (param == GovernanceParam.VotingPeriodValue) {
-                require(values[i] >= 3,                                         "votingPeriodValue must be >= 3");
+                require(values[i] >= 1,                                         "votingPeriodValue must be >= 1"); // low limit required for testnet
                 require(values[i] <=14,                                         "votingPeriodValue must be <= 14");
 
                 votingPeriodValue = values[i] * 24 * 3600;
                 emit GovernanceParamUpdated(param, values[i]);
 
             } else if (param == GovernanceParam.ProposalThresholdValue) {
-                require(values[i] > 0,                                          "ProposalThresholdValue must be positive");
-                require(values[i] <= 1_000_000,                                 "ProposalThresholdValue must be <= 1,000,000");
+                require(values[i] > 0,                                          "proposalThresholdValue must be positive");
+                require(values[i] <= 1_000_000,                                 "proposalThresholdValue must be <= 1,000,000");
 
                 proposalThresholdValue = values[i] * 1e18;
                 emit GovernanceParamUpdated(param, values[i]);
@@ -241,6 +300,21 @@ contract CloudGovernor is
 
                 quorumValue = values[i];
                 emit GovernanceParamUpdated(param, values[i]);
+
+           } else if (param == GovernanceParam.ProposalDepositAmount) {
+                require(values[i] > 0,                                          "proposalDepositAmount must be positive");
+                require(values[i] <= 1_000_000,                                 "proposalDepositAmount must be <= 1,000,000");
+
+                proposalDepositAmount = values[i] * 1e18;
+                emit GovernanceParamUpdated(param, values[i]);
+
+            } else if (param == GovernanceParam.VetoThresholdPercent) {
+                require(values[i] >= 20,                                         "vetoThresholdPercent must be >= 20");
+                require(values[i] <= 100,                                        "vetoThresholdPercent must be <= 100");
+
+                vetoThresholdPercent = values[i];
+                emit GovernanceParamUpdated(param, values[i]);
+
 
              } else {
                 revert("Invalid parameter key");
@@ -259,7 +333,12 @@ contract CloudGovernor is
         require(bytes(title).length <= 100,         "Title is too long (max 100 characters)");
         require(bytes(description).length > 0,      "Description cannot be empty");
         require(bytes(description).length <= 2000,  "Description is too long (max 2000 characters)");
+        require(cloudToken.allowance(msg.sender, address(this)) >= proposalDepositAmount, "Insufficient token allowance");
 
+        //Handle deposit
+        cloudToken.safeTransferFrom(msg.sender, address(this), proposalDepositAmount);
+
+        // Submit Proposal 
         uint256 proposalId                      = _proposeInternal(targets, values, calldatas, description);
 
         // Snapshot Quorum
@@ -269,9 +348,13 @@ contract CloudGovernor is
          // Track proposals &  Store proposal metadata
         proposalIds.push(proposalId);
         allProposals[proposalId]        = true;
-        _proposalsMetadata[proposalId]  = ProposalMetadata({
+
+        proposalsMetadata[proposalId] = ProposalMetadata({
             title:          title,
-            description:    description
+            description:    description,
+            depositAmount:  proposalDepositAmount,
+            proposer:       msg.sender,
+            depositClaimed: false
         });
 
         _lastActivityTime[msg.sender] = block.timestamp; // Record the proposer's activity time.
@@ -289,4 +372,9 @@ contract CloudGovernor is
         revert("Use proposeWithMetadata() instead");
     }
 
+    function claimDeposit(uint256 proposalId) external {
+       require(state(proposalId) != ProposalState.Pending && state(proposalId) != ProposalState.Active, "Proposal not finished");
+  
+       _handleProposalDeposit(proposalId);
+    }
 }

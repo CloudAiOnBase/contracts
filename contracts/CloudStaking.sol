@@ -140,6 +140,13 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
         }
     }
 
+    /// @notice New initializer for the upgraded version that includes the cloudGovernor.
+    function initializeV3(address _cloudGovernor) public reinitializer(3) {
+        require(_cloudGovernor      != address(0), "Invalid governor address");
+
+        cloudGovernor = ICloudGovernor(_cloudGovernor);
+    }
+
     // Enum to represent each staking parameter.
     enum StakingParam {
         MinStakeAmount,               // 0
