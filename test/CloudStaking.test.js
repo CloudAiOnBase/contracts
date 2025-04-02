@@ -720,8 +720,9 @@ describe("CloudStaking", function () {
     });
 
     it("should update lastActivityTime from cloudGovernor before deactivating staker", async function () {
-        await cloudToken.transfer(user1.getAddress(), ethers.parseEther("60000"));
-        await cloudToken.connect(user1).approve(cloudStakeVault.getAddress(), ethers.parseEther("60000"));      
+        await cloudToken.transfer(user1.getAddress(), ethers.parseEther("70000"));
+        await cloudToken.connect(user1).approve(cloudStakeVault.getAddress(), ethers.parseEther("60000")); 
+        await cloudToken.connect(user1).approve(cloudGovernor.getAddress(), ethers.parseEther("10000"));      
         await cloudStaking.connect(user1).stake(ethers.parseEther("60000"));
         let stakerInfo = await cloudStaking.stakers(user1.getAddress());
         expect(stakerInfo.isActive).to.be.true;
@@ -736,7 +737,7 @@ describe("CloudStaking", function () {
         const calldatas   = [cloudGovernor.interface.encodeFunctionData("votingPeriod")];
         const tx          = await cloudGovernor.connect(user1).proposeWithMetadata(targets, values, calldatas, title, description);
         const receipt     = await tx.wait();
-        const proposalId  = receipt.logs[0].args.proposalId;
+        const proposalId  = receipt.logs[1].args.proposalId;
 
         // Handle inactivity
         await cloudStaking.handleInactivityOne(user1.getAddress());

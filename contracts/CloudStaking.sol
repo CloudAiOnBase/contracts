@@ -99,6 +99,7 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
     event AutoUnstaked              (address indexed staker, uint256 amount);
     event handleInactivityProcessed (uint256 lastProcessedStaker);
     event handleInactivityCompleted ();
+    event GovernorContractAddressUpdated     (address oldCloudGovernor, address newCloudGovernor);
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -553,6 +554,18 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
     // ============================================
     // PUBLIC FUNCTIONS
     // ============================================
+
+    function setGovernorContract(address _newCloudGovernor)                               external onlyOwner {
+        require(_newCloudGovernor != address(0),               "Invalid address");
+        require(_newCloudGovernor != address(cloudGovernor),    "Same address already set");
+        require(_newCloudGovernor.code.length > 0,              "Not a contract");
+
+        address oldCloudGovernor     = address(cloudGovernor);
+
+        cloudGovernor           = ICloudGovernor(_newCloudGovernor);
+
+        emit GovernorContractAddressUpdated(oldCloudGovernor, _newCloudGovernor);
+    }
 
     /**
      * @notice Updates one or more staking parameters based on the provided keys and values.
