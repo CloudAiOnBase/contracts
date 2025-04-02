@@ -1036,7 +1036,7 @@ describe("CloudGovernor", function () {
 
       // Fetch the final vote counts
       const proposalVoteCounts = await cloudGovernor.proposalWalletCounts(proposalId);
-      const forVotes = await cloudGovernor.hasVoted(proposalId, user1.address);
+      const forVotes     = await cloudGovernor.hasVoted(proposalId, user1.address);
       const againstVotes = await cloudGovernor.hasVoted(proposalId, user2.address);
       const abstainVotes = await cloudGovernor.hasVoted(proposalId, user3.address);
 
@@ -1081,8 +1081,8 @@ describe("CloudGovernor", function () {
       //console.log("Stored Description:", storedMetadata[1]);
 
       // ✅ Ensure the title & description match
-      expect(storedMetadata[0]).to.equal(title);
-      expect(storedMetadata[1]).to.equal(description);
+      expect(storedMetadata[1]).to.equal(title);
+      expect(storedMetadata[2]).to.equal(description);
     });
   });  
 
@@ -1218,12 +1218,12 @@ describe("CloudGovernor", function () {
       expect(state2).to.equal(7); // 7 = Executed
     });
 
-    it("Prevents double voting on the same proposal", async function () {
-      //approve deposit
+    it("Does not increase total votes when a user changes their vote", async function () {
+      // Approve deposit
       await fundAndApproveProposalDeposit(cloudToken, cloudGovernor, user1);
 
-      const title = "Proposal - Prevent Double Voting";
-      const description = "This proposal ensures users cannot vote twice.";
+      const title = "Proposal - Vote Change Behavior";
+      const description = "This proposal tests vote change without inflating totals.";
 
       const targets = [await cloudGovernor.getAddress()];
       const values = [0];
@@ -1234,16 +1234,32 @@ describe("CloudGovernor", function () {
       const receipt = await tx.wait();
       const proposalId = receipt.logs[1].args.proposalId;
 
-      // Mine a block for the voting delay
-      await ethers.provider.send("hardhat_mine", ["0x708"]); // 0x708 in hex = 1800 blocks
+      // Mine a block to pass the voting delay
+      await ethers.provider.send("hardhat_mine", ["0x708"]); // 1800 blocks
 
-      // User votes once
-      await cloudGovernor.connect(user1).castVote(proposalId, 1); // 1 = FOR
+      // User casts initial vote (FOR)
+      const voteTx = await cloudGovernor.connect(user1).castVote(proposalId, 1); // support = 1
+      const voteReceipt = await voteTx.wait();
 
-      // Attempt to vote again (should fail)
-      await expect(
-        cloudGovernor.connect(user1).castVote(proposalId, 1)
-      ).to.be.reverted;
+      // Get total votes after first vote
+      const totalVotesAfterFirst = await cloudGovernor.totalVotesOf(proposalId);
+
+      // User changes vote (switches to AGAINST)
+      const secondVoteTx = await cloudGovernor.connect(user1).castVote(proposalId, 0); // support = 0
+      await secondVoteTx.wait();
+
+      // Get total votes after second vote
+      const totalVotesAfterSecond = await cloudGovernor.totalVotesOf(proposalId);
+
+      // Expect no change in total votes — same voter, same weight
+      expect(totalVotesAfterSecond).to.equal(totalVotesAfterFirst);
+
+      // Optionally: verify tallies were updated
+      const votesAgainst = await cloudGovernor.votesAgainst(proposalId);
+      const votesFor = await cloudGovernor.votesFor(proposalId);
+
+      expect(votesAgainst).to.be.gt(0);
+      expect(votesFor).to.equal(0); // Previous FOR vote should be removed
     });
 
     it("Prevents executing a proposal more than once", async function () {

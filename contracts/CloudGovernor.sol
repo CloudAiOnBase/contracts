@@ -39,11 +39,15 @@ contract CloudGovernor is
     }
 
     struct ProposalMetadata {
-        string  title;
-        string  description;
-        uint256 depositAmount;
-        address proposer;
-        bool    depositClaimed;
+        address   proposer;
+        string    title;
+        string    description;
+        address[] targets;
+        uint256[] values;
+        bytes[]   calldatas;
+        uint256   timestamp;
+        uint256   depositAmount;
+        bool      depositClaimed;
     }
 
     mapping(uint256 => uint256)             private _quorumSnapshotByBlock;
@@ -51,8 +55,16 @@ contract CloudGovernor is
     mapping(uint256 => ProposalWalletCount) public proposalWalletCounts;
     mapping(address => uint256)             private _lastActivityTime;
     mapping(uint256 => ProposalMetadata)    public proposalsMetadata;
-    mapping(uint256 => uint256)             public vetoVotes;
 
+    // Mappings to record the vote choice and weight each voter has cast on a given proposal.
+    mapping(uint256 => mapping(address => uint8)) public _votes;
+    mapping(uint256 => mapping(address => uint256)) public _voteWeights;
+
+    // Simple tally storage for the proposal votes.
+    mapping(uint256 => uint256) public votesFor;
+    mapping(uint256 => uint256) public votesAgainst;
+    mapping(uint256 => uint256) public votesAbstain;
+    mapping(uint256 => uint256) public votesVeto;
 
     event StakingContractAddressUpdated     (address oldCloudStaking, address newCloudStaking);
     event GovernanceParamUpdated            (GovernanceParam param, uint256 newValue);
@@ -126,7 +138,6 @@ contract CloudGovernor is
         _quorumValue                    = quorumValue;
         _proposalDepositAmount          = proposalDepositAmount     / 1e18;
         _vetoThresholdPercent           = vetoThresholdPercent;
-
     }
 
     function getLastActivityTime(address user)          external view returns (uint256) {
@@ -150,19 +161,50 @@ contract CloudGovernor is
         return paginatedProposals;
     }
 
-    function totalVotesOf(uint256 proposalId) public view returns (uint256) {
+    function proposalVotes(uint256 proposalId)
+        public
+        view
+        override
+        returns (
+            uint256 againstVotes,
+            uint256 forVotes,
+            uint256 abstainVotes
+        )
+    {
+        againstVotes = votesAgainst[proposalId] + votesVeto[proposalId];
+        forVotes     = votesFor[proposalId];
+        abstainVotes = votesAbstain[proposalId];
+    }
+
+    function totalVotesOf(uint256 proposalId)               public view returns (uint256) {
         (
             uint256 againstVotes,
             uint256 forVotes,
             uint256 abstainVotes
-        ) = super.proposalVotes(proposalId);
+        ) = proposalVotes(proposalId);
 
         return againstVotes + forVotes + abstainVotes;
+    }
+
+    function getProposalCount()                             external view returns (uint256) {
+        return proposalIds.length;
+    }
+
+    function hasVoted(uint256 proposalId, address account)  public view override(IGovernor, GovernorCountingSimple) returns (bool) {
+        return _voteWeights[proposalId][account] > 0;
     }
 
     // ============================================
     // INTERNAL FUNCTIONS
     // ============================================
+
+    function _voteSucceeded     (uint256 proposalId)                                                internal view override(Governor, GovernorCountingSimple) returns (bool) {
+        return votesFor[proposalId] > (votesAgainst[proposalId] + votesVeto[proposalId]);
+    }
+
+    function _quorumReached     (uint256 proposalId)                                                internal view override(Governor, GovernorCountingSimple) returns (bool) {
+        return totalVotesOf(proposalId) >= quorum(proposalSnapshot(proposalId));
+    }
 
     function _getVotes          (address account, uint256 blockNumber, bytes memory /*params*/)     internal view override(Governor) returns (uint256)
     {
@@ -182,38 +224,35 @@ contract CloudGovernor is
         uint256 proposalId,
         address account,
         uint8 support, // 0 = Against, 1 = For, 2 = Abstain, 3 = No with Veto
-        uint256 totalWeight,
-        bytes memory params
+        uint256 weight,
+        bytes memory /*params*/
     ) internal override(Governor, GovernorCountingSimple) returns (uint256) {
-        require(support <= 3, "Invalid support value");
 
-        bool isVeto = false;
-
-        // Interpret support = 3 as a veto vote
-        if (support == 3) {
-            support = 0;
-            isVeto = true;
+        if (support == 1) {
+            votesFor[proposalId] += weight;
+        } else if (support == 0) {
+            votesAgainst[proposalId] += weight;
+        } else if (support == 2) {
+            votesAbstain[proposalId] += weight;
+        } else if (support == 3) {
+            votesVeto[proposalId] += weight;
+        } else {
+            revert("invalid vote type");
         }
 
-        uint256 countedWeight = super._countVote(proposalId, account, support, totalWeight, params);
-
-        if (support == 0) {
-            if (isVeto) {
-                vetoVotes[proposalId] += countedWeight;
-                proposalWalletCounts[proposalId].vetoWallets++;
-            }else
-            {
-                proposalWalletCounts[proposalId].againstWallets++;
-            }
-        } else if (support == 1) {
+        if (support == 1) {
             proposalWalletCounts[proposalId].forWallets++;
+        } else if (support == 0) {
+            proposalWalletCounts[proposalId].againstWallets++;
         } else if (support == 2) {
             proposalWalletCounts[proposalId].abstainWallets++;
+        } else if (support == 3) {
+            proposalWalletCounts[proposalId].vetoWallets++;
         }
 
         _lastActivityTime[account] = block.timestamp;
 
-        return countedWeight;
+        return weight;
     }
 
     // Internal function to allow proposeWithMetadata() to call propose()
@@ -233,7 +272,7 @@ contract CloudGovernor is
         if (metadata.proposer == address(0)) return;
 
         uint256 totalVotes     = totalVotesOf(proposalId);
-        uint256 propVetoVotes  = vetoVotes[proposalId];
+        uint256 propVetoVotes  = votesVeto[proposalId];
 
         bool    vetoed;
         if (totalVotes == 0) {
@@ -244,7 +283,7 @@ contract CloudGovernor is
 
         metadata.depositClaimed = true;
 
-        if (!vetoed || state(proposalId) == ProposalState.Succeeded || state(proposalId) == ProposalState.Executed) {
+        if (!vetoed || state(proposalId) == ProposalState.Succeeded || state(proposalId) == ProposalState.Executed || !_quorumReached(proposalId)) {
             // Refund
             cloudToken.safeTransfer(metadata.proposer, metadata.depositAmount);
             emit DepositRefunded(proposalId, metadata.proposer);
@@ -254,9 +293,29 @@ contract CloudGovernor is
         }
     }
 
+    // Internal function to decrease the vote tally for a given support type.
+    function _decreaseVote(uint256 proposalId, uint8 support, uint256 weight) internal {
+        if (support == 1) {
+            votesFor[proposalId]     -= weight;
+            proposalWalletCounts[proposalId].forWallets--;
+        } else if (support == 0) {
+            votesAgainst[proposalId] -= weight;
+            proposalWalletCounts[proposalId].againstWallets--;
+        } else if (support == 2) {
+            votesAbstain[proposalId] -= weight;
+            proposalWalletCounts[proposalId].abstainWallets--;
+        } else if (support == 3) {
+            votesVeto[proposalId]    -= weight;
+            proposalWalletCounts[proposalId].vetoWallets--;
+        } else {
+            revert("invalid vote type");
+        }
+    }
+
     // ============================================
     // PUBLIC FUNCTIONS
     // ============================================
+
 
     function setStakingContract         (address _newCloudStaking)                                  external onlyGovernance {
         require(_newCloudStaking != address(0),               "Invalid address");
@@ -355,10 +414,14 @@ contract CloudGovernor is
         allProposals[proposalId]        = true;
 
         proposalsMetadata[proposalId] = ProposalMetadata({
+            proposer:       msg.sender,
             title:          title,
             description:    description,
+            targets:        targets,
+            values:         values,
+            calldatas:      calldatas,
+            timestamp:      block.timestamp,
             depositAmount:  proposalDepositAmount,
-            proposer:       msg.sender,
             depositClaimed: false
         });
 
@@ -382,4 +445,34 @@ contract CloudGovernor is
   
        _handleProposalDeposit(proposalId);
     }
+
+    // Overrides castVote to allow a voter to change their vote if the proposal is still active.
+    function castVote(uint256 proposalId, uint8 support) public override returns (uint256) {
+        // Ensure the proposal is still active.
+        require(state(proposalId) == ProposalState.Active, "voting is closed");
+
+        // Get the current voting weight from the token snapshot.
+        uint256 weight = getVotes(msg.sender, proposalSnapshot(proposalId));
+
+        // Check if the voter has already cast a vote.
+        uint8 previousSupport = _votes[proposalId][msg.sender];
+        uint256 previousWeight = _voteWeights[proposalId][msg.sender];
+
+        // If a previous vote exists, subtract its weight from the current tally.
+        if (previousSupport != 0 || previousWeight != 0) {
+            _decreaseVote(proposalId, previousSupport, previousWeight);
+        }
+
+        // Record the new vote and weight.
+        _votes[proposalId][msg.sender] = support;
+        _voteWeights[proposalId][msg.sender] = weight;
+
+        // Increase tally for the new vote.
+        _countVote(proposalId, msg.sender, support, weight, bytes(""));
+
+        emit VoteCast(msg.sender, proposalId, support, weight, "");
+
+        return weight;
+    }
+
 }
