@@ -46,6 +46,9 @@ contract CloudGovernor is
         uint256[] values;
         bytes[]   calldatas;
         uint256   timestamp;
+        uint256   block;
+        uint256   quorum;
+        uint256   totalVP;
         uint256   depositAmount;
         bool      depositClaimed;
     }
@@ -54,11 +57,11 @@ contract CloudGovernor is
     mapping(uint256 => bool)                public  allProposals;
     mapping(uint256 => ProposalWalletCount) public proposalWalletCounts;
     mapping(address => uint256)             private _lastActivityTime;
-    mapping(uint256 => ProposalMetadata)    public proposalsMetadata;
+    mapping(uint256 => ProposalMetadata)    private _proposalsMetadata;
 
     // Mappings to record the vote choice and weight each voter has cast on a given proposal.
-    mapping(uint256 => mapping(address => uint8)) public _votes;
-    mapping(uint256 => mapping(address => uint256)) public _voteWeights;
+    mapping(uint256 => mapping(address => uint8)) public votes;
+    mapping(uint256 => mapping(address => uint256)) public voteWeights;
 
     // Simple tally storage for the proposal votes.
     mapping(uint256 => uint256) public votesFor;
@@ -191,7 +194,39 @@ contract CloudGovernor is
     }
 
     function hasVoted(uint256 proposalId, address account)  public view override(IGovernor, GovernorCountingSimple) returns (bool) {
-        return _voteWeights[proposalId][account] > 0;
+        return voteWeights[proposalId][account] > 0;
+    }
+
+
+    function proposalsMetadata(uint256 proposalId) external view returns (
+        address proposer,
+        string memory title,
+        string memory description,
+        address[] memory targets,
+        uint256[] memory values,
+        bytes[] memory calldatas,
+        uint256 timestamp,
+        uint256 blockNumber,
+        uint256 quorumVotes,
+        uint256 totalVP,
+        uint256 depositAmount,
+        bool depositClaimed
+    ) {
+        ProposalMetadata storage meta = _proposalsMetadata[proposalId];
+        return (
+            meta.proposer,
+            meta.title,
+            meta.description,
+            meta.targets,
+            meta.values,
+            meta.calldatas,
+            meta.timestamp,
+            meta.block,
+            meta.quorum,
+            meta.totalVP,
+            meta.depositAmount,
+            meta.depositClaimed
+        );
     }
 
     // ============================================
@@ -209,15 +244,6 @@ contract CloudGovernor is
     function _getVotes          (address account, uint256 blockNumber, bytes memory /*params*/)     internal view override(Governor) returns (uint256)
     {
        return cloudStaking.userStakedForTally(account, blockNumber);
-    }
-
-    function _computeQuorum     ()                                                                  internal view returns (uint256) {
-
-        uint256 totalVotes       = cloudStaking.totalStakedForTally();
-
-        uint256 calculatedQuorum = totalVotes * quorumValue / 100;
-
-        return calculatedQuorum > 0 ? calculatedQuorum : 1; // safety
     }
 
     function _countVote(
@@ -266,7 +292,7 @@ contract CloudGovernor is
     }
 
     function _handleProposalDeposit(uint256 proposalId) internal {
-        ProposalMetadata storage metadata = proposalsMetadata[proposalId];
+        ProposalMetadata storage metadata = _proposalsMetadata[proposalId];
 
         if (metadata.depositClaimed) return;
         if (metadata.proposer == address(0)) return;
@@ -405,15 +431,19 @@ contract CloudGovernor is
         // Submit Proposal 
         uint256 proposalId                      = _proposeInternal(targets, values, calldatas, description);
 
-        // Snapshot Quorum
+        // Snapshot, Quorum...
         uint256 snapshotBlock                   = proposalSnapshot(proposalId);             // Get the snapshot block for this proposal (Governor's internal snapshot)
-        _quorumSnapshotByBlock[snapshotBlock]   = _computeQuorum();                         // Save the current quorum value for that snapshot block.
+        uint256 totalStakedForTally             = cloudStaking.totalStakedForTally();
+        uint256 calculatedQuorum                = totalStakedForTally > 0 ? totalStakedForTally * quorumValue / 100 : 1; 
+
+        // Snapshot Quorum
+        _quorumSnapshotByBlock[snapshotBlock]   = calculatedQuorum;      // Save the current quorum value for that snapshot block.
 
          // Track proposals &  Store proposal metadata
         proposalIds.push(proposalId);
         allProposals[proposalId]        = true;
 
-        proposalsMetadata[proposalId] = ProposalMetadata({
+        _proposalsMetadata[proposalId] = ProposalMetadata({
             proposer:       msg.sender,
             title:          title,
             description:    description,
@@ -421,6 +451,9 @@ contract CloudGovernor is
             values:         values,
             calldatas:      calldatas,
             timestamp:      block.timestamp,
+            block:          snapshotBlock,
+            quorum:         calculatedQuorum,
+            totalVP:        totalStakedForTally,
             depositAmount:  proposalDepositAmount,
             depositClaimed: false
         });
@@ -454,9 +487,11 @@ contract CloudGovernor is
         // Get the current voting weight from the token snapshot.
         uint256 weight = getVotes(msg.sender, proposalSnapshot(proposalId));
 
+        require(weight > 0, "no VP");
+
         // Check if the voter has already cast a vote.
-        uint8 previousSupport = _votes[proposalId][msg.sender];
-        uint256 previousWeight = _voteWeights[proposalId][msg.sender];
+        uint8 previousSupport = votes[proposalId][msg.sender];
+        uint256 previousWeight = voteWeights[proposalId][msg.sender];
 
         // If a previous vote exists, subtract its weight from the current tally.
         if (previousSupport != 0 || previousWeight != 0) {
@@ -464,8 +499,8 @@ contract CloudGovernor is
         }
 
         // Record the new vote and weight.
-        _votes[proposalId][msg.sender] = support;
-        _voteWeights[proposalId][msg.sender] = weight;
+        votes[proposalId][msg.sender] = support;
+        voteWeights[proposalId][msg.sender] = weight;
 
         // Increase tally for the new vote.
         _countVote(proposalId, msg.sender, support, weight, bytes(""));
