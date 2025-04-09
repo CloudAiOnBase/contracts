@@ -728,8 +728,10 @@ describe("CloudStaking", function () {
         expect(stakerInfo.isActive).to.be.true;
 
         // Advance time beyond the governance inactivity threshold
-        await network.provider.send("evm_increaseTime", [params.governanceInactivityThreshold * 24 * 3600 + 100]);
-        await network.provider.send("evm_mine"); // Mine a new block
+        const blocks = (params.governanceInactivityThreshold * 24 * 3600 + 100) / 2;
+        const hexBlocks = '0x' + Math.floor(blocks).toString(16);
+        await ethers.provider.send("hardhat_mine", [hexBlocks]);
+
         const title       = "Proposal - Unauthorized Cancellation";
         const description = "This proposal ensures only authorized users can cancel.";
         const targets     = [await cloudGovernor.getAddress()];

@@ -281,6 +281,8 @@ contract CloudStaking is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
 
     function userStakedForTally(address stakerAddr, uint256 blockNumber)  external view returns (uint256) {
 
+        blockNumber -= 3600 / 2; // Patch: align with proposal creation by subtracting voting delay (1 hour) from snapshot block
+
         StakeCheckpoint[] storage checkpoints = stakedCheckpoints[stakerAddr];
 
         uint256 length = checkpoints.length;

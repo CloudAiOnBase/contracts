@@ -150,6 +150,8 @@ describe("CloudGovernor", function () {
     await cloudStaking.connect(user1).stake(stakeAmount1);
     await cloudStaking.connect(user2).stake(stakeAmount2);
     await cloudStaking.connect(user3).stake(stakeAmount3);
+          
+    await ethers.provider.send("hardhat_mine", ["0x708"]); // 0x708 in hex = 1800 blocks
 
     // Transfer ownership of Vesting wallet to CloudGovernor
     const currentOwner = await commFundVestingWallet.owner();
@@ -584,7 +586,7 @@ describe("CloudGovernor", function () {
       await cloudStaking.connect(user1).stake(stakeAmount);
 
       // Mine a block to reflect the state change
-      await ethers.provider.send("evm_mine");
+      await ethers.provider.send("hardhat_mine", ["0x708"]); // 0x708 in hex = 1800 blocks
 
       // Fetch updated voting power for user1
       const blockNumberAfter = await ethers.provider.getBlockNumber();
@@ -604,7 +606,7 @@ describe("CloudGovernor", function () {
       await cloudStaking.connect(user1).initiateUnstake(stakeAmount1);
 
       // Mine a block to reflect the state change
-      await ethers.provider.send("evm_mine");
+      await ethers.provider.send("hardhat_mine", ["0x708"]); // 0x708 in hex = 1800 blocks
 
       // Fetch voting power after unstaking
       const blockNumberAfterUnstake = await ethers.provider.getBlockNumber();
@@ -635,7 +637,7 @@ describe("CloudGovernor", function () {
       await cloudStaking.connect(user1).stake(additionalStake);
 
       // Mine a block to reflect the state change
-      await ethers.provider.send("evm_mine");
+      await ethers.provider.send("hardhat_mine", ["0x708"]); // 0x708 in hex = 1800 blocks
 
       // Fetch voting power after additional stake
       const blockNumberAfterAdditionalStake = await ethers.provider.getBlockNumber();
@@ -1150,6 +1152,9 @@ describe("CloudGovernor", function () {
 
       // Unstake all tokens
       await cloudStaking.connect(user1).initiateUnstake(stakeAmount1); // Assuming unstakeAll() exists in your staking contract
+
+      // Mine a block to reflect the state change
+      await ethers.provider.send("hardhat_mine", ["0x708"]); // 0x708 in hex = 1800 blocks
 
       // Check user1's voting power after unstaking
       let votingPowerAfter = await cloudGovernor.getVotes(user1.address, await ethers.provider.getBlockNumber());
