@@ -43,10 +43,11 @@ contract CloudIdentity is Initializable, ERC721URIStorageUpgradeable, OwnableUpg
     uint256        public mintPrice;
     uint256        public minStakeRequired;
 
-    event MintPriceUpdated       (uint256 oldPrice, uint256 newPrice);
-    event MinStakeRequiredUpdated(uint256 oldStakeTokens, uint256 newStakeTokens);
-    event Minted                 (address indexed user, uint256 indexed tokenId, string pseudo);
-    event AvatarUpdated          (uint256 indexed tokenId, string newURI);
+    event MintPriceUpdated                  (uint256 oldPrice, uint256 newPrice);
+    event MinStakeRequiredUpdated           (uint256 oldStakeTokens, uint256 newStakeTokens);
+    event StakingContractAddressUpdated     (address oldCloudStaking, address newCloudStaking);
+    event Minted                            (address indexed user, uint256 indexed tokenId, string pseudo);
+    event AvatarUpdated                     (uint256 indexed tokenId, string newURI);
 
 
     /// @custom:oz-upgrades-unsafe-allow constructor
@@ -157,6 +158,17 @@ contract CloudIdentity is Initializable, ERC721URIStorageUpgradeable, OwnableUpg
         emit MinStakeRequiredUpdated(minStakeRequired, newStake);
 
         minStakeRequired = newStake;
+    }
+
+    function setStakingContract         (address _newCloudStaking)                      external onlyOwner {
+        require(_newCloudStaking != address(0),               "Invalid address");
+        require(_newCloudStaking != address(cloudStaking),    "Same address already set");
+        require(_newCloudStaking.code.length > 0,             "Not a contract");
+
+        address oldCloudStaking     = address(cloudStaking);
+        cloudStaking                = ICloudStaking(_newCloudStaking);
+
+        emit StakingContractAddressUpdated(oldCloudStaking, _newCloudStaking);
     }
 
     function pause()                                                                    external onlyOwner {

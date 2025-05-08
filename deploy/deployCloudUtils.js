@@ -31,8 +31,8 @@ main().catch((error) => {
 
 /*
 
-npx hardhat run scripts/deployCloudUtils.js --network baseSepolia
+npx hardhat run deploy/deployCloudUtils.js --network baseSepolia
 
-npx hardhat verify --network baseSepolia $(jq -r '.baseSepolia.CloudUtils' deployed_addresses.json)
+npx hardhat verify --network baseSepolia $(jq -r '.baseSepolia.CloudUtils' deploy/deployments.json)
 
 */

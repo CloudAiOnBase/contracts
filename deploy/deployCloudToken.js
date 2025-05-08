@@ -16,3 +16,12 @@ main().catch((error) => {
     console.error(error);
     process.exitCode = 1;
 });
+
+
+/*
+
+npx hardhat run deploy/deployCloudToken.js --network baseSepolia
+
+npx hardhat verify --network baseSepolia $(jq -r '.baseSepolia.CloudToken' deploy/deployments.json)
+
+*/

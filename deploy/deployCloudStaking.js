@@ -49,9 +49,9 @@ main().catch((error) => {
 
 /*
 
-npx hardhat run scripts/deployCloudStakeVault.js --network baseSepolia
+npx hardhat run deploy/deployCloudStaking.js --network baseSepolia
 
-npx hardhat verify --network baseSepolia $(jq -r '.baseSepolia.CloudStaking' deployed_addresses.json)
+npx hardhat verify --network baseSepolia $(jq -r '.baseSepolia.CloudStaking' deploy/deployments.json)
 
 
 

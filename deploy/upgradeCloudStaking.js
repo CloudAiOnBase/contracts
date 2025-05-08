@@ -38,6 +38,15 @@ async function main() {
   /*
   const cloudGovernorAddress = deployedAddresses[hre.network.name]?.CloudGovernor;
   if (cloudGovernorAddress) {
+    console.log("Initializing V2 with CloudGovernor:", cloudGovernorAddress);
+    const tx = await upgradedCloudStaking.initializeV2(cloudGovernorAddress);
+    await tx.wait();
+    console.log("✅ initializeV2 executed successfully!");
+  }
+  */
+  /*
+  const cloudGovernorAddress = deployedAddresses[hre.network.name]?.CloudGovernor;
+  if (cloudGovernorAddress) {
     console.log("Initializing V3 with CloudGovernor:", cloudGovernorAddress);
     const tx = await upgradedCloudStaking.initializeV3(cloudGovernorAddress);
     await tx.wait();

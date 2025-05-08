@@ -47,12 +47,12 @@ main().catch((error) => {
 
 /*
 
-npx hardhat run scripts/deployCloudStakeVault.js --network baseSepolia
+npx hardhat run deploy/deployCloudRewardPool.js --network baseSepolia
 
-npx hardhat verify --network baseSepolia $(jq -r '.baseSepolia.CloudRewardPool' deployed_addresses.json) \
-$(jq -r '.baseSepolia.CloudToken' deployed_addresses.json) \
+npx hardhat verify --network baseSepolia $(jq -r '.baseSepolia.CloudRewardPool' deploy/deployments.json) \
+$(jq -r '.baseSepolia.CloudToken' deploy/deployments.json) \
 0x000000000000000000000000000000000000dEaD \
-$(jq -r '.baseSepolia.CloudStakeVault' deployed_addresses.json) \
+$(jq -r '.baseSepolia.CloudStakeVault' deploy/deployments.json) \
 10
 
 
