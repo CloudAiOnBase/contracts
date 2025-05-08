@@ -60,7 +60,7 @@ contract CloudIdentity is Initializable, ERC721URIStorageUpgradeable, OwnableUpg
     ) public initializer {
         __ERC721_init("CloudAI Passport", "CLOUDPASS");
         __ERC721URIStorage_init();
-        __Ownable_init();
+        __Ownable_init(msg.sender);
         __UUPSUpgradeable_init();
         __ReentrancyGuard_init();
         __Pausable_init();
@@ -79,7 +79,7 @@ contract CloudIdentity is Initializable, ERC721URIStorageUpgradeable, OwnableUpg
     // ============================================
 
     function getPseudo(uint256 tokenId)                                                 external view returns (string memory) {
-        require(_exists(tokenId), "Token does not exist");
+        require(_ownerOf(tokenId) != address(0), "Token does not exist");
 
         return pseudos[tokenId];
     }
@@ -98,7 +98,7 @@ contract CloudIdentity is Initializable, ERC721URIStorageUpgradeable, OwnableUpg
 
     function _validatePseudo(string memory _pseudo)                                     internal pure {
         bytes memory b = bytes(_pseudo);
-        require(b.length >= 4 && b.length <= 15, "Pseudo must be 4–15 chars");
+        require(b.length >= 4 && b.length <= 15, "Pseudo must be 4-15 chars");
 
         for (uint256 i = 0; i < b.length; i++) {
             bytes1 char = b[i];
@@ -168,13 +168,14 @@ contract CloudIdentity is Initializable, ERC721URIStorageUpgradeable, OwnableUpg
     }
 
     function mint(string memory _pseudo, string memory _tokenURI)                       external whenNotPaused nonReentrant {
+        uint256 priceWei = mintPrice * 1e18;
+
         require(balanceOf(msg.sender) == 0,     "You already own a CloudAI Passport");
 
         uint256 userStake = _getStakedAmount(msg.sender);
         require(userStake >= minStakeRequired * 1e18, "Insufficient stake");
 
-        require(
-          IERC20(address(cloudToken)).allowance(msg.sender, address(this)) >= priceWei,
+        require(IERC20(address(cloudToken)).allowance(msg.sender, address(this)) >= priceWei,
           "Approve CLOUD first"
         );
 
@@ -185,7 +186,6 @@ contract CloudIdentity is Initializable, ERC721URIStorageUpgradeable, OwnableUpg
 
 
         // 
-        uint256 priceWei = mintPrice * 1e18;
         SafeERC20.safeTransferFrom(IERC20(address(cloudToken)), msg.sender, address(this), priceWei);
         cloudToken.burn(priceWei);
 
@@ -200,9 +200,8 @@ contract CloudIdentity is Initializable, ERC721URIStorageUpgradeable, OwnableUpg
     }
 
     function updateAvatar(uint256 tokenId, string memory newTokenURI)                   external whenNotPaused {
-        require(_exists(tokenId), "Token does not exist");
         require(ownerOf(tokenId) == msg.sender, "Not the owner");
-        require(bytes(newTokenURI).length < 1000, "URI too long").
+        require(bytes(newTokenURI).length < 1000, "URI too long");
         
         _setTokenURI(tokenId, newTokenURI);
 
