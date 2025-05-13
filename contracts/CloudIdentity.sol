@@ -47,9 +47,6 @@ contract CloudIdentity is Initializable, ERC721URIStorageUpgradeable, OwnableUpg
     mapping(string => string)  public pseudoByPseudoLower;
     mapping(uint256 => string) public profileData; // maps tokenId > encoded JSON profile data
 
-    //mapping(uint256 => string)  public  pseudos;
-
-
     event MintPriceUpdated                  (uint256 oldPrice, uint256 newPrice);
     event MinStakeRequiredUpdated           (uint256 oldStakeTokens, uint256 newStakeTokens);
     event StakingContractAddressUpdated     (address oldCloudStaking, address newCloudStaking);
