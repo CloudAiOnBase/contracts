@@ -51,7 +51,7 @@ contract CloudIdentity is Initializable, ERC721URIStorageUpgradeable, OwnableUpg
     event MinStakeRequiredUpdated           (uint256 oldStakeTokens, uint256 newStakeTokens);
     event StakingContractAddressUpdated     (address oldCloudStaking, address newCloudStaking);
     event Minted                            (address indexed user, uint256 indexed tokenId, string pseudo);
-    event AvatarUpdated                     (uint256 indexed tokenId, string newURI);
+    event TokenURIUpdated                   (uint256 indexed tokenId, string newURI);
 
 
     /// @custom:oz-upgrades-unsafe-allow constructor
@@ -84,7 +84,7 @@ contract CloudIdentity is Initializable, ERC721URIStorageUpgradeable, OwnableUpg
     // ============================================
 
     function getPseudo                  (uint256 tokenId)                                   external view returns (string memory) {
-        require(_exists(tokenId), "Token does not exist");
+        require(_ownerOf(tokenId) != address(0), "Token does not exist");
 
         string memory lower = pseudoLowerByTokenId[tokenId];
 
@@ -92,7 +92,7 @@ contract CloudIdentity is Initializable, ERC721URIStorageUpgradeable, OwnableUpg
     }
 
     function isValid                    (uint256 tokenId)                                   external view returns (bool) {
-        if (!_exists(tokenId)) return false;
+        require(_ownerOf(tokenId) != address(0), "Token does not exist");
 
         address owner = ownerOf(tokenId);
 
@@ -107,7 +107,7 @@ contract CloudIdentity is Initializable, ERC721URIStorageUpgradeable, OwnableUpg
 
     function _validatePseudo            (string memory _pseudo)                             internal pure {
         bytes memory b = bytes(_pseudo);
-        require(b.length >= 4 && b.length <= 15, "Pseudo must be 4-15 chars");
+        require(b.length >= 3 && b.length <= 20, "Pseudo must be 3-20 chars");
 
         for (uint256 i = 0; i < b.length; i++) {
             bytes1 char = b[i];
@@ -143,17 +143,14 @@ contract CloudIdentity is Initializable, ERC721URIStorageUpgradeable, OwnableUpg
         return string(bLower);
     }
 
-    function _beforeTokenTransfer(
-        address from,
-        address to,
-        uint256 tokenId,
-        uint256 batchSize
-    ) internal override {
-        super._beforeTokenTransfer(from, to, tokenId, batchSize);
+    /// @dev Enforce “one CloudPass per wallet” on every transfer.
+    function _update(address to, uint256 tokenId, address auth) internal override returns (address from) {
+      if (to != address(0)) {
+        require(balanceOf(to) == 0, "Recipient already owns a CloudPass");
+      }
 
-        if (from != address(0) && to != address(0)) {
-            require(balanceOf(to) == 0, "Recipient already owns a CloudPass");
-        }
+      from = super._update(to, tokenId, auth);
+      return from;
     }
 
     // ============================================
@@ -224,14 +221,14 @@ contract CloudIdentity is Initializable, ERC721URIStorageUpgradeable, OwnableUpg
         emit Minted(msg.sender, tokenId, _pseudo);
     }
 
-    function updateAvatar               (uint256 tokenId, string memory newTokenURI)        external whenNotPaused {
+    function updateTokenURI(uint256 tokenId, string memory newTokenURI) external whenNotPaused {
         require(ownerOf(tokenId) == msg.sender, "Not the owner");
         require(bytes(newTokenURI).length < 1000, "URI too long");
-        
-        _setTokenURI(tokenId, newTokenURI);
 
-        emit AvatarUpdated(tokenId, newTokenURI);
+        _setTokenURI(tokenId, newTokenURI);
+        emit TokenURIUpdated(tokenId, newTokenURI);
     }
+
 
     // Storage gap for future upgrades (50 slots)
     uint256[50] private __gap;
