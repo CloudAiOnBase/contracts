@@ -42,15 +42,17 @@ contract CloudIdentity is Initializable, ERC721URIStorageUpgradeable, OwnableUpg
     uint256        public minStakeRequired;
     uint256        public nextTokenId;
 
-    mapping(string => uint256) public tokenIdByPseudoLower;
-    mapping(uint256 => string) public pseudoLowerByTokenId;
-    mapping(string => string)  public pseudoByPseudoLower;
-    mapping(uint256 => string) public profileData; // maps tokenId > encoded JSON profile data
+    mapping(address => uint256) public tokenIdByOwner;
+    mapping(uint256 => uint256) public tokenBirth;
+    mapping(string => uint256)  public tokenIdByUsernameLower;
+    mapping(uint256 => string)  public usernameLowerByTokenId;
+    mapping(string => string)   public usernameByUsernameLower;
+    mapping(uint256 => string)  public profileData; // maps tokenId > encoded JSON profile data
 
     event MintPriceUpdated                  (uint256 oldPrice, uint256 newPrice);
     event MinStakeRequiredUpdated           (uint256 oldStakeTokens, uint256 newStakeTokens);
     event StakingContractAddressUpdated     (address oldCloudStaking, address newCloudStaking);
-    event Minted                            (address indexed user, uint256 indexed tokenId, string pseudo);
+    event Minted                            (address indexed user, uint256 indexed tokenId, string username);
     event TokenURIUpdated                   (uint256 indexed tokenId, string newURI);
 
 
@@ -83,12 +85,12 @@ contract CloudIdentity is Initializable, ERC721URIStorageUpgradeable, OwnableUpg
     // VIEW FUNCTIONS
     // ============================================
 
-    function getPseudo                  (uint256 tokenId)                                   external view returns (string memory) {
+    function getUsername                  (uint256 tokenId)                                   external view returns (string memory) {
         require(_ownerOf(tokenId) != address(0), "Token does not exist");
 
-        string memory lower = pseudoLowerByTokenId[tokenId];
+        string memory lower = usernameLowerByTokenId[tokenId];
 
-        return pseudoByPseudoLower[lower];
+        return usernameByUsernameLower[lower];
     }
 
     function isValid                    (uint256 tokenId)                                   external view returns (bool) {
@@ -105,9 +107,9 @@ contract CloudIdentity is Initializable, ERC721URIStorageUpgradeable, OwnableUpg
 
     function _authorizeUpgrade          (address newImplementation)                         internal override onlyOwner {}
 
-    function _validatePseudo            (string memory _pseudo)                             internal pure {
-        bytes memory b = bytes(_pseudo);
-        require(b.length >= 3 && b.length <= 20, "Pseudo must be 3-20 chars");
+    function _validateUsername            (string memory _username)                             internal pure {
+        bytes memory b = bytes(_username);
+        require(b.length >= 3 && b.length <= 20, "Username must be 3-20 chars");
 
         for (uint256 i = 0; i < b.length; i++) {
             bytes1 char = b[i];
@@ -120,7 +122,7 @@ contract CloudIdentity is Initializable, ERC721URIStorageUpgradeable, OwnableUpg
                 (char == 0x2D)                    // -
             );
 
-            require(valid, "Invalid character in pseudo");
+            require(valid, "Invalid character in username");
         }
     }
 
@@ -150,6 +152,14 @@ contract CloudIdentity is Initializable, ERC721URIStorageUpgradeable, OwnableUpg
       }
 
       from = super._update(to, tokenId, auth);
+
+      if (to != address(0)) {
+        tokenIdByOwner[to] = tokenId;
+      }
+      if (from != address(0)) {
+        delete tokenIdByOwner[from];
+      }
+
       return from;
     }
 
@@ -194,17 +204,17 @@ contract CloudIdentity is Initializable, ERC721URIStorageUpgradeable, OwnableUpg
         _unpause();
     }
 
-    function mint                       (string memory _pseudo, string memory _tokenURI)    external whenNotPaused nonReentrant {
+    function mint                       (string memory _username, string memory _tokenURI)    external whenNotPaused nonReentrant {
         uint256 priceWei    = mintPrice * 1e18;
-        string memory lower = _toLower(_pseudo);
+        string memory lower = _toLower(_username);
         uint256 userStake   = _getStakedAmount(msg.sender);
 
         require(balanceOf(msg.sender) == 0,                                                   "You already own a CloudAI Passport");
         require(userStake >= minStakeRequired * 1e18,                                         "Insufficient stake");
         require(cloudToken.allowance(msg.sender, address(this)) >= priceWei,                  "Approve CLOUD first" );
-        require(tokenIdByPseudoLower[lower] == 0,                                             "Pseudo already used");
+        require(tokenIdByUsernameLower[lower] == 0,                                             "Username already used");
 
-        _validatePseudo(_pseudo);
+        _validateUsername(_username);
 
         // 
         SafeERC20.safeTransferFrom(IERC20(address(cloudToken)), msg.sender, address(this), priceWei);
@@ -213,12 +223,14 @@ contract CloudIdentity is Initializable, ERC721URIStorageUpgradeable, OwnableUpg
         _safeMint(msg.sender, tokenId);
         _setTokenURI(tokenId, _tokenURI);
 
-        tokenIdByPseudoLower[lower]   = tokenId;
-        pseudoByPseudoLower[lower]    = _pseudo;
-        pseudoLowerByTokenId[tokenId] = lower;
-        profileData[tokenId]          = "";
+        tokenIdByOwner[msg.sender]      = tokenId;
+        tokenBirth[tokenId]             = block.timestamp;
+        tokenIdByUsernameLower[lower]   = tokenId;
+        usernameByUsernameLower[lower]  = _username;
+        usernameLowerByTokenId[tokenId] = lower;
+        profileData[tokenId]            = "";
 
-        emit Minted(msg.sender, tokenId, _pseudo);
+        emit Minted(msg.sender, tokenId, _username);
     }
 
     function updateTokenURI(uint256 tokenId, string memory newTokenURI) external whenNotPaused {

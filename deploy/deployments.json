@@ -1,7 +1,7 @@
 {
   "baseSepolia": {
     "CloudToken": "0x8BE5f16eB202ADDFcBE92410d2ca4629C3bA5ad1",
-    "CloudUtils": "0x7F92F4EcC60cAd2728D48C791b7e24ebEb5542d4",
+    "CloudUtils": "0x23326FE42D43721c71de861C6270cf45407b2Fc9",
     "CloudStakeVault": "0x0BB2D960Bea7671f95B6b1626B0e6C7c85E88847",
     "CloudRewardPool": "0x03414F581F5B99A77cCdC1d8c390c277439fC5af",
     "CloudStaking": "0xFA1c49D14F71CCcfF04036BEB8ca255acB2beAC9",
@@ -9,7 +9,7 @@
     "CloudDevFund": "",
     "CloudDevFundVestingWallet": "",
     "CloudCommunityEcosystemVestingWallet": "",
-    "CloudIdentity": "0x9a0B9661E9343CD33f83998451832EDF75A9cEDb"
+    "CloudIdentity": "0x63D05308e4ed305216091727742439C43a326773"
   },
   "base": {
     "CloudToken": "0x2425598dd959e47a294a737ee4104316864817cf",
