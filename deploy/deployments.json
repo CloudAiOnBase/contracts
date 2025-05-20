@@ -20,7 +20,8 @@
     "CloudGovernor": "0xfb1E9F5406d4CE2CdAB19544ecB011Bb0C20787C",
     "CloudDevFund": "0x99857a25d4864193a103d8279865bEC00c099fD3",
     "CloudDevGrowthVestingWallet": "0x74984360b3370dA055667f6F52c1097aeA735418",
-    "CloudCommunityEcosystemVestingWallet": "0x919bB065e97494d3e8f40746371F98960Da26949"
+    "CloudCommunityEcosystemVestingWallet": "0x919bB065e97494d3e8f40746371F98960Da26949",
+    "CloudIdentity": "0x942A38C375Ad29471e0Ee43cDe734F2A96610452"
   },
   "localhost": {
     "CloudToken": "0x5FbDB2315678afecb367f032d93F642f64180aa3",

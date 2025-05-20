@@ -100,14 +100,14 @@ describe("CloudIdentity", function () {
       expect(await cloudIdentity.name()).to.equal("CloudAI Passport");
       expect(await cloudIdentity.symbol()).to.equal("CLOUDPASS");
       expect(await cloudIdentity.mintPrice()).to.equal(10000);
-      expect(await cloudIdentity.minStakeRequired()).to.equal(50000);
+      expect(await cloudIdentity.minStakeRequired()).to.equal(100000);
       expect(await cloudIdentity.nextTokenId()).to.equal(1);
     });
   });
 
   describe("Minting", () => {
-    it("allows mint with valid pseudo and sufficient stake", async () => {
-      const stakeAmt = ethers.parseUnits("60000", 18);
+    it("allows mint with valid username and sufficient stake", async () => {
+      const stakeAmt = ethers.parseUnits("100000", 18);
       await stakeForUser(cloudToken, cloudStakeVault, cloudStaking, user, stakeAmt);
       await fundAndApproveMint(cloudToken, cloudIdentity, user);
 
@@ -116,12 +116,12 @@ describe("CloudIdentity", function () {
       ).to.emit(cloudIdentity, "Minted").withArgs(user.address, 1, "ValidUser1");
 
       expect(await cloudIdentity.ownerOf(1)).to.equal(user.address);
-      expect(await cloudIdentity.getPseudo(1)).to.equal("ValidUser1");
+      expect(await cloudIdentity.getUsername(1)).to.equal("ValidUser1");
       expect(await cloudIdentity.isValid(1)).to.equal(true);
     });
 
     it("rejects mint if already owns a passport", async () => {
-      const stakeAmt = ethers.parseUnits("60000", 18);
+      const stakeAmt = ethers.parseUnits("100000", 18);
       await stakeForUser(cloudToken, cloudStakeVault, cloudStaking, user, stakeAmt);
       await fundAndApproveMint(cloudToken, cloudIdentity, user);
       await cloudIdentity.connect(user).mint("SoloUser", "uri");
@@ -143,42 +143,42 @@ describe("CloudIdentity", function () {
       ).to.be.revertedWith("Insufficient stake");
     });
 
-    it("rejects invalid pseudos", async () => {
-      const stakeAmt = ethers.parseUnits("60000", 18);
+    it("rejects invalid usernames", async () => {
+      const stakeAmt = ethers.parseUnits("100000", 18);
       await stakeForUser(cloudToken, cloudStakeVault, cloudStaking, user, stakeAmt);
       await fundAndApproveMint(cloudToken, cloudIdentity, user);
 
       await expect(
-        cloudIdentity.connect(user).mint("abc", "uri")
-      ).to.be.revertedWith("Pseudo must be 4-15 chars");
+        cloudIdentity.connect(user).mint("ab", "uri")
+      ).to.be.revertedWith("Username must be 3-20 chars");
 
       await expect(
         cloudIdentity.connect(user).mint("Bad*Name!", "uri")
-      ).to.be.revertedWith("Invalid character in pseudo");
+      ).to.be.revertedWith("Invalid character in username");
     });
 
-    it("rejects duplicate pseudos (case-insensitive)", async () => {
+    it("rejects duplicate usernames (case-insensitive)", async () => {
       // user mints first
-      const stakeAmt1 = ethers.parseUnits("60000", 18);
+      const stakeAmt1 = ethers.parseUnits("100000", 18);
       await stakeForUser(cloudToken, cloudStakeVault, cloudStaking, user, stakeAmt1);
       await fundAndApproveMint(cloudToken, cloudIdentity, user);
       await cloudIdentity.connect(user).mint("UniqueName", "uri");
 
       // other stakes and tries same name
-      const stakeAmt2 = ethers.parseUnits("60000", 18);
+      const stakeAmt2 = ethers.parseUnits("100000", 18);
       await stakeForUser(cloudToken, cloudStakeVault, cloudStaking, other, stakeAmt2);
       await fundAndApproveMint(cloudToken, cloudIdentity, other);
 
       await expect(
         cloudIdentity.connect(other).mint("uniquename", "uri")
-      ).to.be.revertedWith("Pseudo already used");
+      ).to.be.revertedWith("Username already used");
     });
   });
 
   describe("Avatar updates", () => {
     beforeEach(async () => {
       // mint one first
-      const stakeAmt = ethers.parseUnits("60000", 18);
+      const stakeAmt = ethers.parseUnits("100000", 18);
       await stakeForUser(cloudToken, cloudStakeVault, cloudStaking, user, stakeAmt);
       await fundAndApproveMint(cloudToken, cloudIdentity, user);
       await cloudIdentity.connect(user).mint("AvatarUser", "oldURI");
@@ -186,24 +186,24 @@ describe("CloudIdentity", function () {
 
     it("allows owner to update avatar", async () => {
       await expect(
-        cloudIdentity.connect(user).updateAvatar(1, "newURI")
-      ).to.emit(cloudIdentity, "AvatarUpdated").withArgs(1, "newURI");
+        cloudIdentity.connect(user).updateTokenURI(1, "newURI")
+      ).to.emit(cloudIdentity, "TokenURIUpdated").withArgs(1, "newURI");
       expect(await cloudIdentity.tokenURI(1)).to.equal("newURI");
     });
 
     it("rejects non-owner or nonexistent token", async () => {
       await expect(
-        cloudIdentity.connect(other).updateAvatar(1, "x")
+        cloudIdentity.connect(other).updateTokenURI(1, "x")
       ).to.be.revertedWith("Not the owner");
       await expect(
-        cloudIdentity.connect(user).updateAvatar(2, "x")
+        cloudIdentity.connect(user).updateTokenURI(2, "x")
       ).to.be.reverted;
     });
 
     it("rejects too long URI", async () => {
       const longURI = "x".repeat(1000);
       await expect(
-        cloudIdentity.connect(user).updateAvatar(1, longURI)
+        cloudIdentity.connect(user).updateTokenURI(1, longURI)
       ).to.be.revertedWith("URI too long");
     });
   });

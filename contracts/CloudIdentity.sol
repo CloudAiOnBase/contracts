@@ -65,7 +65,7 @@ contract CloudIdentity is Initializable, ERC721URIStorageUpgradeable, OwnableUpg
         address _cloudToken,
         address _cloudStaking
     ) public initializer {
-        __ERC721_init("CloudAI Passport", "CLOUDPASS");
+        __ERC721_init("CloudPass", "CLOUDPASS");
         __ERC721URIStorage_init();
         __Ownable_init(msg.sender);
         __UUPSUpgradeable_init();
@@ -76,7 +76,7 @@ contract CloudIdentity is Initializable, ERC721URIStorageUpgradeable, OwnableUpg
         cloudStaking        = ICloudStaking(_cloudStaking);
 
         mintPrice           = 10_000;
-        minStakeRequired    = 50_000;
+        minStakeRequired    = 100_000;
         nextTokenId         = 1;
     }
 
@@ -209,7 +209,7 @@ contract CloudIdentity is Initializable, ERC721URIStorageUpgradeable, OwnableUpg
         string memory lower = _toLower(_username);
         uint256 userStake   = _getStakedAmount(msg.sender);
 
-        require(balanceOf(msg.sender) == 0,                                                   "You already own a CloudAI Passport");
+        require(balanceOf(msg.sender) == 0,                                                   "You already own a CloudPass");
         require(userStake >= minStakeRequired * 1e18,                                         "Insufficient stake");
         require(cloudToken.allowance(msg.sender, address(this)) >= priceWei,                  "Approve CLOUD first" );
         require(tokenIdByUsernameLower[lower] == 0,                                             "Username already used");
